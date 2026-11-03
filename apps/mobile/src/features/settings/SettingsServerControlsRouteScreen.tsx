@@ -46,7 +46,11 @@ const PAGE_TITLES: Record<SettingsPage, string> = {
 const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettingKey[]> = {
   "new-threads": ["defaultThreadEnvMode", "worktreeSubmodules", "defaultRuntimeMode"],
   "source-control": ["defaultAutoPull", "newWorktreesStartFromOrigin"],
-  "agent-behavior": ["responseStreamingMode", "enableAgentBrowserAccess"],
+  "agent-behavior": [
+    "responseStreamingMode",
+    "enableAgentBrowserAccess",
+    "replySuggestionsEnabled",
+  ],
   maintenance: ["continueThreadsAfterServerUpdate"],
 };
 
@@ -391,6 +395,16 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       value={uniform("enableAgentBrowserAccess")}
                       disabled={disabledFor("enableAgentBrowserAccess")}
                       onValueChange={(value) => write({ enableAgentBrowserAccess: value })}
+                    />
+                  </SettingsSection>
+                  <SettingsSection title="Suggested replies">
+                    <FanoutSwitchRow
+                      icon="text.bubble"
+                      label="Suggest a next reply"
+                      subtitle="Predict what you might say next. Costs a short model call at the end of every turn."
+                      value={uniform("replySuggestionsEnabled")}
+                      disabled={disabledFor("replySuggestionsEnabled")}
+                      onValueChange={(value) => write({ replySuggestionsEnabled: value })}
                     />
                   </SettingsSection>
                 </>

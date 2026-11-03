@@ -15,11 +15,26 @@ const NotificationBadge = Schema.Struct({
       Schema.isPattern(/^data:image\/png;base64,[a-z0-9+/]+={0,2}$/i),
     ),
   ),
+  bounce: Schema.Boolean,
 });
+
+let bounceId: number | null = null;
+
+// A "critical" bounce repeats until the app is activated, so one outstanding
+// request covers every waiting thread and must be cancelled once none remain.
+function applyDockBounce(count: number): void {
+  if (count > 0) {
+    if (bounceId === null) bounceId = Electron.app.dock?.bounce("critical") ?? null;
+    return;
+  }
+  if (bounceId === null) return;
+  Electron.app.dock?.cancelBounce(bounceId);
+  bounceId = null;
+}
 
 export function applyNotificationBadge(
   platform: NodeJS.Platform,
-  { count, image }: typeof NotificationBadge.Type,
+  { count, image, bounce }: typeof NotificationBadge.Type,
 ): void {
   try {
     if (Electron.BrowserWindow.getFocusedWindow()) count = 0;
@@ -35,6 +50,7 @@ export function applyNotificationBadge(
       }
     } else if (platform === "darwin" || platform === "linux") {
       Electron.app.setBadgeCount(count);
+      if (platform === "darwin") applyDockBounce(bounce ? count : 0);
     }
   } catch (error) {
     Effect.runSync(Effect.logWarning("Could not update notification badge", error));
@@ -47,7 +63,7 @@ export const installNotificationBadge = Effect.fn("desktop.ipc.installNotificati
     const app = yield* ElectronApp.ElectronApp;
     const platform = yield* HostProcessPlatform;
     const clear = () => {
-      applyNotificationBadge(platform, { count: 0, image: null });
+      applyNotificationBadge(platform, { count: 0, image: null, bounce: false });
       for (const window of Electron.BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) window.webContents.send(SET_NOTIFICATION_BADGE_CHANNEL);
       }

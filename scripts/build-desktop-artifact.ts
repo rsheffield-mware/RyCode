@@ -4,6 +4,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
+import sharp from "sharp";
 
 import {
   createPackageWithOptions,
@@ -54,7 +55,7 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.t3tools.t3code";
+const DESKTOP_APP_ID = "com.rycode.desktop";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -941,7 +942,7 @@ interface StagePackageJson {
 export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
-  // T3 Code always passes the user's installed Claude executable to the SDK,
+  // RyCode always passes the user's installed Claude executable to the SDK,
   // so the SDK's optional platform packages (each a ~200MB bundled executable)
   // are dead weight. The trailing dash keeps the SDK's own JS package.
   "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
@@ -2371,7 +2372,7 @@ function stageMacIcons(stageResourcesDir: string, sourcePng: string, verbose: bo
 export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(function* (
   stageResourcesDir: string,
   channel: "latest" | "nightly",
-  verbose: boolean,
+  _verbose: boolean,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -2389,14 +2390,8 @@ export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(
       "dmg",
       `dmg-background-${channel}${output.suffix}.png`,
     );
-    yield* runCommand(
-      ChildProcess.make(
-        {},
-      )`sips -s format png -z ${output.height} ${output.width} ${sourcePath} --out ${targetPath}`,
-      {
-        label: `sips ${channel} DMG background${output.suffix || "@1x"}`,
-        verbose,
-      },
+    yield* Effect.tryPromise(() =>
+      sharp(sourcePath).resize(output.width, output.height).png().toFile(targetPath),
     );
   }
 });
@@ -2614,8 +2609,8 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    ? "RyCode (Nightly)"
+    : (desktopPackageJson.productName ?? "RyCode");
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2640,7 +2635,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    artifactName: "RyCode-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
@@ -2691,11 +2686,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       extendInfo: {
         NSScreenCaptureUsageDescription:
-          "T3 Code captures the active window when you use the window capture shortcut.",
+          "RyCode captures the active window when you use the window capture shortcut.",
       },
       protocols: [
         {
-          name: "T3 Code",
+          name: "RyCode",
           schemes: ["t3code", "t3code-dev"],
         },
       ],
@@ -2742,7 +2737,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // t3code:// OAuth callbacks to the app.
       protocols: [
         {
-          name: "T3 Code",
+          name: "RyCode",
           schemes: ["t3code", "t3code-dev"],
         },
       ],
@@ -3641,7 +3636,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     t3codeCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "T3 Code desktop build",
+    description: "RyCode desktop build",
     author: "T3 Tools",
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
@@ -3915,7 +3910,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
 }).pipe(
-  Command.withDescription("Build a desktop artifact for T3 Code."),
+  Command.withDescription("Build a desktop artifact for RyCode."),
   Command.withHandler((input) => Effect.flatMap(resolveBuildOptions(input), buildDesktopArtifact)),
 );
 

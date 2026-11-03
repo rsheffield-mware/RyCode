@@ -75,6 +75,19 @@ export interface ThreadTitleGenerationResult {
   needsRefinement?: boolean | undefined;
 }
 
+export interface ReplySuggestionGenerationInput {
+  cwd: string;
+  /** Formatted thread transcript, reasoning traces already stripped. */
+  transcript: string;
+  /** What model and provider to use for generation. */
+  modelSelection: ModelSelection;
+}
+
+export interface ReplySuggestionGenerationResult {
+  /** Empty when the thread has no sensible next user message. */
+  suggestion: string;
+}
+
 /**
  * TextGeneration - Service tag for commit and change request text generation.
  */
@@ -106,6 +119,11 @@ export class TextGeneration extends Context.Service<
     readonly generateThreadTitle: (
       input: ThreadTitleGenerationInput,
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
+
+    /** Predict what the user would most likely say next in a settled thread. */
+    readonly generateReplySuggestion: (
+      input: ReplySuggestionGenerationInput,
+    ) => Effect.Effect<ReplySuggestionGenerationResult, TextGenerationError>;
   }
 >()("t3/textGeneration/TextGeneration") {}
 
@@ -113,7 +131,8 @@ type TextGenerationOp =
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
-  | "generateThreadTitle";
+  | "generateThreadTitle"
+  | "generateReplySuggestion";
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -149,6 +168,10 @@ export const make = Effect.gen(function* () {
     generateBranchName: (input) =>
       resolveInstance(registry, "generateBranchName", input.modelSelection.instanceId).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateBranchName(input)),
+      ),
+    generateReplySuggestion: (input) =>
+      resolveInstance(registry, "generateReplySuggestion", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generateReplySuggestion(input)),
       ),
     generateThreadTitle: (input) =>
       resolveInstance(registry, "generateThreadTitle", input.modelSelection.instanceId).pipe(

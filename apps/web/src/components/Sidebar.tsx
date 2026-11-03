@@ -152,6 +152,10 @@ import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
+import { useVisiblePaneThreadKeys } from "../panes/PaneContext";
+import { useChatPaneActions } from "../panes/usePanes";
+import { clearPaneDrag, readArmedPaneDrop, usePaneDragStore } from "../panes/paneDragStore";
+import { MAX_PANES } from "../panes/paneLayout";
 import {
   animateSidebarLayoutChanges,
   applySidebarThreadDrop,
@@ -773,7 +777,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         onClick={handleActivate}
         onKeyDown={handleKeyDown}
       >
-        <div className="relative z-10 h-[4.875rem] px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
+        <div className="relative z-10 flex h-[3.375rem] flex-col justify-center px-[var(--sidebar-row-content-inset)]">
           <div className="flex h-5 min-w-0 items-center gap-1.5">
             <SquarePenIcon aria-hidden className={draftPenClassName} />
             {props.project ? (
@@ -800,7 +804,9 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
               </Tooltip>
             </span>
           </div>
-          <div className="mt-0.5 truncate text-sm font-medium text-foreground/90">{preview}</div>
+          <div className="mt-0.5 truncate text-sm leading-[18px] font-medium text-foreground/90">
+            {preview}
+          </div>
         </div>
       </div>
     </li>
@@ -1463,12 +1469,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       onBlur={handleRenameBlur}
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
-      className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm font-medium text-card-foreground outline-none focus:border-foreground"
+      className="h-[18px] min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm leading-[18px] font-medium text-card-foreground outline-none focus:border-foreground"
     />
   ) : (
     <span
       className={cn(
-        "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
+        "min-w-0 flex-1 text-sm leading-[18px] transition-opacity motion-reduce:transition-none",
         shouldRecede ? "font-normal" : "font-medium",
         variant === "card"
           ? cn(
@@ -1729,6 +1735,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   }
 
   const diff = latestTurnDiff(thread);
+  const hasProjectLineMeta = Boolean(
+    thread.branch || terminalStatusIcon || prBadge || diff || isRemote,
+  );
 
   return (
     <li
@@ -1736,8 +1745,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
       className={cn(
-        // Matches the h-[4.875rem] content box; the py-0.5 padding is added on top.
-        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
+        // Matches the h-[3.375rem] content box plus the py-0.5 list padding.
+        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_58px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1758,8 +1767,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             />
           }
         >
-          <div className="relative z-10 h-[4.875rem] px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
-            <div className="flex h-5 min-w-0 items-center gap-1.5">
+          <div className="relative z-10 flex h-[3.375rem] flex-col justify-center px-[var(--sidebar-row-content-inset)]">
+            <div className="flex h-4 min-w-0 items-center gap-1.5">
               {draftIndicator}
               {props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
@@ -1767,15 +1776,46 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {props.projectDisplayName ? (
                 <span
                   className={cn(
-                    "min-w-0 flex-1 truncate text-secondary-label text-xs",
+                    "min-w-0 truncate text-secondary-label text-xs",
                     shouldRecede ? "font-normal" : "font-medium",
                   )}
                 >
                   {props.projectDisplayName}
                 </span>
-              ) : (
-                <span className="flex-1" />
-              )}
+              ) : null}
+              {hasProjectLineMeta ? (
+                <span className="flex min-w-0 max-w-[40%] items-center gap-1 text-xs text-secondary-label">
+                  {thread.branch ? (
+                    <>
+                      <ThreadWorktreeIndicator thread={thread} />
+                      <MiddleTruncate
+                        value={thread.branch}
+                        showTitle={false}
+                        className="text-muted-foreground/40"
+                      />
+                    </>
+                  ) : null}
+                  {terminalStatusIcon}
+                  {prBadge}
+                  {diff ? (
+                    <span className="shrink-0 font-mono">
+                      <span className="text-diff-addition-foreground">+{diff.insertions}</span>{" "}
+                      <span className="text-diff-deletion-foreground">−{diff.deletions}</span>
+                    </span>
+                  ) : null}
+                  {isRemote ? (
+                    <span
+                      aria-hidden
+                      className="pointer-events-none inline-flex shrink-0 items-center text-sidebar-muted-foreground/70"
+                    >
+                      <EnvironmentMachineIcon
+                        kind={props.environmentMachine}
+                        className="size-3.5"
+                      />
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
               {pinIndicator}
               {/* The visible state owns this slot's width: status at rest,
                   actions on hover/keyboard focus or while the popover is open. Keeping
@@ -1784,7 +1824,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {sortable?.isDragging ? (
                 dragDestination
               ) : (
-                <span className="group/sidebar-status-slot relative ml-auto flex h-5 min-w-8 shrink-0 items-stretch justify-end text-xs">
+                <span className="group/sidebar-status-slot relative ml-auto flex h-4 min-w-8 shrink-0 items-stretch justify-end text-xs">
                   {/* Read-only status labels yield to the hover actions. Woke is
                     itself an action, so it stays pointer-enabled and visible
                     while the other controls appear beside it. */}
@@ -1913,69 +1953,28 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               )}
             </div>
-            <div className="mt-1 flex min-w-0">
+            <div className="mt-0.5 flex h-[18px] min-w-0 items-center gap-1.5">
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
                 </span>
               ) : null}
-            </div>
-            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-              {/* Always the branch. The plan step used to take this slot while
-                  working, but it truncated to a half-sentence and dropped the
-                  branch, so the row lost its most stable identifier. */}
-              {thread.branch ? (
-                <>
-                  <ThreadWorktreeIndicator thread={thread} />
-                  <MiddleTruncate
-                    value={thread.branch}
-                    showTitle={false}
-                    className="flex-1 text-muted-foreground/40"
+              {driverKind ? (
+                <span aria-hidden className="pointer-events-none inline-flex shrink-0 items-center">
+                  <ProviderInstanceIcon
+                    driverKind={driverKind}
+                    displayName={
+                      providerEntry?.displayName ?? thread.session?.providerName ?? modelInstanceId
+                    }
+                    accentColor={providerEntry?.accentColor}
+                    showBadge={showInstanceBadge}
+                    // Glyph dims, badge stays saturated; offset matches the composer trigger.
+                    iconClassName="size-3.5 opacity-60"
+                    badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
                   />
-                </>
-              ) : (
-                <span className="flex-1" />
-              )}
-              {terminalStatusIcon}
-              {prBadge}
-              {diff ? (
-                <span className="shrink-0 font-mono">
-                  <span className="text-diff-addition-foreground">+{diff.insertions}</span>{" "}
-                  <span className="text-diff-deletion-foreground">−{diff.deletions}</span>
                 </span>
               ) : null}
-              <span
-                aria-hidden
-                className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
-              >
-                {isRemote ? (
-                  <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
-                    <EnvironmentMachineIcon
-                      aria-hidden
-                      kind={props.environmentMachine}
-                      className="size-3.5"
-                    />
-                  </span>
-                ) : null}
-                {driverKind ? (
-                  <span className="inline-flex shrink-0 items-center">
-                    <ProviderInstanceIcon
-                      driverKind={driverKind}
-                      displayName={
-                        providerEntry?.displayName ??
-                        thread.session?.providerName ??
-                        modelInstanceId
-                      }
-                      accentColor={providerEntry?.accentColor}
-                      showBadge={showInstanceBadge}
-                      // Glyph dims, badge stays saturated; offset matches the composer trigger.
-                      iconClassName="size-3.5 opacity-60"
-                      badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
-                    />
-                  </span>
-                ) : null}
-              </span>
             </div>
           </div>
           {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
@@ -2261,6 +2260,15 @@ export default function Sidebar() {
     [routeDraftThread, routeTarget],
   );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
+  // Every open pane is "where you are", so every open pane's row highlights.
+  const visiblePaneThreadKeys = useVisiblePaneThreadKeys();
+  const { openInNewPane, dropIntoPaneRow } = useChatPaneActions();
+  const dropIntoPaneRowRef = useRef(dropIntoPaneRow);
+  dropIntoPaneRowRef.current = dropIntoPaneRow;
+  const openInNewPaneRef = useRef(openInNewPane);
+  openInNewPaneRef.current = openInNewPane;
+  const visiblePaneThreadKeysRef = useRef(visiblePaneThreadKeys);
+  visiblePaneThreadKeysRef.current = visiblePaneThreadKeys;
   const routeTargetRef = useRef(routeTarget);
   routeTargetRef.current = routeTarget;
   // Post-settle navigation validates against the CURRENT route, not the one
@@ -3018,6 +3026,13 @@ export default function Sidebar() {
       const isMac = isMacPlatform(navigator.platform);
       const isModClick = isMac ? event.metaKey : event.ctrlKey;
       const threadKey = scopedThreadKey(threadRef);
+      // Alt/Option-click splits the thread off beside the current one.
+      // Mod-click and Shift-click already own multi-select.
+      if (event.altKey && !isModClick && !event.shiftKey) {
+        event.preventDefault();
+        openInNewPane({ kind: "server", threadRef });
+        return;
+      }
       if (isModClick) {
         event.preventDefault();
         toggleThreadSelection(threadKey);
@@ -3033,7 +3048,7 @@ export default function Sidebar() {
       }
       navigateToThread(threadRef);
     },
-    [navigateToThread, rangeSelectTo, toggleThreadSelection],
+    [navigateToThread, openInNewPane, rangeSelectTo, toggleThreadSelection],
   );
 
   // A settle per thread at a time: double clicks and repeated menu picks
@@ -3185,6 +3200,7 @@ export default function Sidebar() {
     dragSensorRef.current = sensor;
   }, []);
   const cancelThreadDrag = useCallback(() => {
+    clearPaneDrag();
     dragSensorRef.current?.cancel();
   }, []);
   const dndSensors = useSensors(
@@ -3334,6 +3350,15 @@ export default function Sidebar() {
   const handleThreadDragStart = useCallback(
     (event: DragStartEvent) => {
       const activeKey = String(event.active.id);
+      // Arm drag-to-split before the sidebar's own drop rules: a row the
+      // sidebar refuses to *place* is still a valid thing to drag into a pane.
+      const dragged = threadByKey.get(activeKey);
+      if (dragged !== undefined) {
+        usePaneDragStore.getState().beginPaneDrag({
+          kind: "server",
+          threadRef: scopeThreadRef(dragged.environmentId, dragged.id),
+        });
+      }
       const activeSection = sectionByThreadKey.get(activeKey);
       if (activeSection === undefined) return;
       // Stop normal section motion before dnd-kit measures the picked-up row.
@@ -3357,7 +3382,7 @@ export default function Sidebar() {
           event.activatorEvent instanceof PointerEvent ? event.activatorEvent.clientY : null,
       });
     },
-    [sectionByThreadKey],
+    [sectionByThreadKey, threadByKey],
   );
   // Include every visible row in the measured order. Older servers disable
   // pickup on their rows without changing where those rows render.
@@ -3440,9 +3465,18 @@ export default function Sidebar() {
   ]);
   const handleThreadDragOver = useCallback(
     (event: DragOverEvent) => {
-      const target = event.over
-        ? resolveSidebarDropTarget(sidebarListItems, String(event.active.id), String(event.over.id))
-        : null;
+      // A pointer over the pane row owns the drop; the sidebar must not also
+      // preview a section move underneath it.
+      const target =
+        readArmedPaneDrop() !== null
+          ? null
+          : event.over
+            ? resolveSidebarDropTarget(
+                sidebarListItems,
+                String(event.active.id),
+                String(event.over.id),
+              )
+            : null;
       setDragState((current) =>
         current === null || current.activeKey !== String(event.active.id)
           ? current
@@ -3554,6 +3588,18 @@ export default function Sidebar() {
   const handleThreadDragEnd = useCallback(
     (event: DragEndEvent) => {
       const activeKey = String(event.active.id);
+      const armedPaneDrop = readArmedPaneDrop();
+      clearPaneDrag();
+      if (armedPaneDrop !== null) {
+        const dropped = threadByKey.get(activeKey);
+        if (dropped !== undefined) {
+          dropIntoPaneRowRef.current(
+            { kind: "server", threadRef: scopeThreadRef(dropped.environmentId, dropped.id) },
+            armedPaneDrop,
+          );
+        }
+        return;
+      }
       const activeSection = sectionByThreadKey.get(activeKey);
       const target =
         event.over === null
@@ -4075,6 +4121,9 @@ export default function Sidebar() {
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
               },
+              canOpenInNewPane:
+                !visiblePaneThreadKeysRef.current.has(threadKey) &&
+                visiblePaneThreadKeysRef.current.size < MAX_PANES,
               snoozePresets,
             }),
             position,
@@ -4090,6 +4139,9 @@ export default function Sidebar() {
           return;
         }
         switch (clicked.value) {
+          case "open-in-new-pane":
+            openInNewPaneRef.current({ kind: "server", threadRef });
+            return;
           case "filter-by-project":
             // This item is the only scope control here, so picking the
             // already-scoped project again is the way back to all projects.
@@ -4640,6 +4692,7 @@ export default function Sidebar() {
                 onDragStart={handleThreadDragStart}
                 onDragOver={handleThreadDragOver}
                 onDragEnd={handleThreadDragEnd}
+                onDragCancel={clearPaneDrag}
               >
                 <SidebarDragLifecycle onUnmount={cancelThreadDrag} />
                 <SortableContext items={sortableIds} strategy={sidebarSortingStrategy}>
@@ -4715,7 +4768,9 @@ export default function Sidebar() {
                             // the wake signal must survive the trip. Still-snoozed
                             // rows resolve to null on their own.
                             wokeAt={threadWokeAt(thread, { now: snoozeNow })}
-                            isActive={routeThreadKey === threadKey}
+                            isActive={
+                              routeThreadKey === threadKey || visiblePaneThreadKeys.has(threadKey)
+                            }
                             openPullRequestsInRightPanel={routeThreadRef !== null}
                             jumpLabel={
                               showThreadJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null

@@ -1123,7 +1123,11 @@ export interface DesktopBridge {
   getPathForFile?: (file: File) => string;
   /** The desktop client's OS platform, read from Electron's preload process. */
   getClientPlatform?: () => string;
-  setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
+  setNotificationBadge?: (badge: {
+    count: number;
+    image: string | null;
+    bounce: boolean;
+  }) => Promise<void>;
   onNotificationBadgeClear?: (listener: () => void) => () => void;
   /**
    * The OS locale as a BCP-47 tag, which the renderer cannot read for itself:

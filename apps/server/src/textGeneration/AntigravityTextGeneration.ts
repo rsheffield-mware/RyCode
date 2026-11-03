@@ -25,11 +25,13 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildReplySuggestionPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
+  sanitizeReplySuggestion,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 
@@ -405,10 +407,21 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
       };
     });
 
+  const generateReplySuggestion: TextGeneration.TextGeneration["Service"]["generateReplySuggestion"] =
+    Effect.fn("AntigravityTextGeneration.generateReplySuggestion")(function* (input) {
+      const generated = yield* runAntigravityJson({
+        operation: "generateReplySuggestion",
+        ...buildReplySuggestionPrompt({ transcript: input.transcript }),
+        modelSelection: input.modelSelection,
+      });
+      return { suggestion: sanitizeReplySuggestion(generated.suggestion) };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateReplySuggestion,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

@@ -75,6 +75,20 @@ describe("resolveProjectSettings", () => {
     expect(resolveProjectSettings(settings, otherProjectId).settings.defaultAutoPull).toBe(true);
   });
 
+  it("keeps curated memory within its project and clears it on reset", () => {
+    const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      projectSettingsOverrides: { [projectId]: { projectMemory: "Use tabs for this project." } },
+    });
+    expect(resolveProjectSettings(settings, projectId).settings.projectMemory).toBe(
+      "Use tabs for this project.",
+    );
+    expect(resolveProjectSettings(settings, otherProjectId).settings.projectMemory).toBe("");
+    const cleared = applyServerSettingsPatch(settings, {
+      projectSettingsOverrides: { [projectId]: {} },
+    });
+    expect(resolveProjectSettings(cleared, projectId).settings.projectMemory).toBe("");
+  });
+
   it("keeps the environment text generation model when the override's provider is disabled", () => {
     const disabledSelection = createModelSelection(ProviderInstanceId.make("claudeAgent"), "opus");
     const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {

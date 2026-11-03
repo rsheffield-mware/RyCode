@@ -24,12 +24,14 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildReplySuggestionPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   normalizeCliError,
   sanitizeCommitSubject,
   sanitizePrTitle,
+  sanitizeReplySuggestion,
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "./TextGenerationUtils.ts";
@@ -102,7 +104,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle",
+      | "generateThreadTitle"
+      | "generateReplySuggestion",
     value: unknown,
     detail: string,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -132,7 +135,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateReplySuggestion";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -185,14 +189,20 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     );
 
     const runClaudeCommand = Effect.fn("runClaudeJson.runClaudeCommand")(function* () {
-      // Titles need only the supplied prompt, not configuration from the checkout.
+      // Titles and reply suggestions need only the supplied prompt, not
+      // configuration from the checkout.
       const workingDirectory =
-        operation === "generateThreadTitle"
+        operation === "generateThreadTitle" || operation === "generateReplySuggestion"
           ? yield* fileSystem
-              .makeTempDirectoryScoped({ prefix: "t3code-claude-title-" })
+              .makeTempDirectoryScoped({ prefix: "t3code-claude-metadata-" })
               .pipe(
                 Effect.mapError((cause) =>
-                  normalizeCliError("claude", operation, cause, "Failed to create title directory"),
+                  normalizeCliError(
+                    "claude",
+                    operation,
+                    cause,
+                    "Failed to create metadata directory",
+                  ),
                 ),
               )
           : cwd;
@@ -410,10 +420,28 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       };
     });
 
+  const generateReplySuggestion: TextGeneration.TextGeneration["Service"]["generateReplySuggestion"] =
+    Effect.fn("ClaudeTextGeneration.generateReplySuggestion")(function* (input) {
+      const { prompt, outputSchema } = buildReplySuggestionPrompt({
+        transcript: input.transcript,
+      });
+
+      const generated = yield* runClaudeJson({
+        operation: "generateReplySuggestion",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return { suggestion: sanitizeReplySuggestion(generated.suggestion) };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateReplySuggestion,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

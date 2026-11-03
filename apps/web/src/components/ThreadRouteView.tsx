@@ -24,6 +24,8 @@ import {
 } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
+import { usePane, usePaneThreadRegistration } from "../panes/PaneContext";
+import { useChatPaneActions } from "../panes/usePanes";
 import {
   buildThreadRouteParams,
   resolveThreadRouteRenderState,
@@ -46,6 +48,10 @@ import { resolveThreadSyncPhase } from "../threadSync";
  */
 export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   const navigate = useNavigate();
+  // Only the pane backed by the route path params may drive top-level
+  // navigation; a secondary pane whose thread disappears closes itself.
+  const { paneId, isPrimary, paneCount } = usePane();
+  const { closePane, replacePane } = useChatPaneActions();
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
     draftId === null ? null : store.getDraftSession(draftId),
@@ -139,6 +145,10 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
       if (cancelled) {
         return;
       }
+      if (!isPrimary) {
+        replacePane(paneId, { kind: "server", threadRef: canonicalThreadRef });
+        return;
+      }
       void navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(canonicalThreadRef),
@@ -148,14 +158,18 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     return () => {
       cancelled = true;
     };
-  }, [canonicalThreadRef, navigate]);
+  }, [canonicalThreadRef, isPrimary, navigate, paneId, replacePane]);
 
   useEffect(() => {
     if (target.kind !== "draft" || draftSession || canonicalThreadRef) {
       return;
     }
+    if (!isPrimary) {
+      closePane(paneId);
+      return;
+    }
     void navigate({ to: "/", replace: true });
-  }, [canonicalThreadRef, draftSession, navigate, target.kind]);
+  }, [canonicalThreadRef, closePane, draftSession, isPrimary, navigate, paneId, target.kind]);
 
   useEffect(() => {
     if (target.kind !== "server" || !bootstrapComplete) {
@@ -167,11 +181,24 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     if (renderState === "missing") {
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
+      if (!isPrimary) {
+        closePane(paneId);
+        return;
+      }
       if (environmentHasAnyThreads) {
         void navigate({ to: "/", replace: true });
       }
     }
-  }, [bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target]);
+  }, [
+    bootstrapComplete,
+    closePane,
+    environmentHasAnyThreads,
+    isPrimary,
+    navigate,
+    paneId,
+    renderState,
+    target,
+  ]);
 
   useEffect(() => {
     if (target.kind !== "server" || !serverThreadStarted || !draftThread) {
@@ -179,6 +206,8 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     }
     finalizePromotedDraftThreadByRef(target.threadRef);
   }, [draftThread, serverThreadStarted, target]);
+
+  usePaneThreadRegistration(serverThreadRef);
 
   let view: React.ReactNode = null;
   if (target.kind === "draft") {
@@ -189,6 +218,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
           draftId={target.draftId}
           environmentId={draftSession.environmentId}
           threadId={draftSession.threadId}
+          reserveTitleBarControlInset={isPrimary}
           routeKind="draft"
           forceExpandedMobileComposer
         />
@@ -200,6 +230,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
         {...(nextChatViewKey ? { key: nextChatViewKey.key } : {})}
         environmentId={target.threadRef.environmentId}
         threadId={target.threadRef.threadId}
+        reserveTitleBarControlInset={isPrimary}
         routeKind="server"
         threadSyncPhase={threadSyncPhase}
       />
@@ -207,7 +238,16 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   }
 
   return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
+    <SidebarInset
+      // A split layout gives the pane box its height, and a stacked pane is
+      // not viewport tall; only the lone-pane tree may claim the viewport.
+      className={
+        paneCount > 1
+          ? "min-h-0 overflow-hidden overscroll-y-none"
+          : "h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
+      }
+      data-pane-id={paneId}
+    >
       {view}
     </SidebarInset>
   );

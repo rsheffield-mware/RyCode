@@ -1,5 +1,13 @@
 # T3 Code
 
+## RyCode maintainer context
+
+This repository is Ryan's personal fork of T3 Code, rebranded RyCode. Diverging from upstream UI and behavior, including removing or replacing upstream features, is intentional. Treat the upstream guidance below as defaults; Ryan's explicit preferences take precedence. Ryan works on macOS and uses Sourcetree.
+
+Keep thread "settled" and "archived" terminology distinct. They represent separate states; Ryan withdrew the request to rename settled to archived. Before changing terminology, check whether the proposed name already describes another concept.
+
+`AGENTS.md` is the shared project instruction source for Claude and Codex. Keep durable project context here; `CLAUDE.md` imports this file. Project skills live in `.agents/skills`, with `.claude/skills` linked to that directory.
+
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity) and serves web, desktop, and mobile clients.
 
 You can think of T3 Code as an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor.

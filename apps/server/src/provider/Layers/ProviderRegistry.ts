@@ -524,12 +524,18 @@ export const ProviderRegistryLive = Layer.effect(
     const refreshOneSource = Effect.fn("refreshOneSource")(function* (
       providerSource: ProviderSnapshotSource,
     ) {
-      return yield* providerSource.refresh.pipe(
-        Effect.flatMap((nextProvider) =>
-          correlateSnapshotWithSource(providerSource, nextProvider).pipe(
-            Effect.flatMap(syncProvider),
-          ),
-        ),
+      const nextProvider = yield* providerSource.refresh;
+      const provider = yield* correlateSnapshotWithSource(providerSource, nextProvider);
+      const previousProviders = yield* Ref.get(providersRef);
+      const hasCachedWorkspaces = previousProviders.some(
+        (previous) =>
+          previous.instanceId === provider.instanceId &&
+          (previous.workspaceSnapshots?.length ?? 0) > 0,
+      );
+      return yield* syncProvider(
+        provider.status === "ready" && hasCachedWorkspaces
+          ? { ...provider, workspaceSnapshots: provider.workspaceSnapshots ?? [] }
+          : provider,
       );
     });
 

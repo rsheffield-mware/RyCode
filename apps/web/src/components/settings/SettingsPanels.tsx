@@ -1,6 +1,10 @@
 import { SettingsGroup } from "./SettingsGroup";
 import { Spinner } from "~/components/ui/spinner";
-import { NotificationSettings } from "./NotificationSettings";
+import {
+  DockBounceSettings,
+  NotificationSettings,
+  NotificationSoundSettings,
+} from "./NotificationSettings";
 import { ArchiveIcon, ArchiveX, CheckIcon, ChevronRightIcon, SettingsIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
@@ -548,6 +552,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
         ? ["In-app notifications"]
         : []),
+      ...(settings.dockBounceEnabled !== DEFAULT_UNIFIED_SETTINGS.dockBounceEnabled
+        ? ["Bounce Dock icon"]
+        : []),
       ...(settings.sidebarThreadPreviewCount !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount
         ? ["Visible threads"]
         : []),
@@ -680,6 +687,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.timestampFormat,
       settings.notificationMode,
       settings.inAppNotificationsEnabled,
+      settings.dockBounceEnabled,
       settings.wordWrap,
       followSystem,
       theme,
@@ -755,6 +763,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
+      dockBounceEnabled: DEFAULT_UNIFIED_SETTINGS.dockBounceEnabled,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
@@ -2311,6 +2320,7 @@ export function GeneralSettingsPanel() {
 
       <SettingsSection id="behavior" title="Behavior">
         <NotificationSettings />
+        <NotificationSoundSettings />
         <SettingsRow
           {...searchableSetting("in-app-notifications")}
           description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
@@ -2322,6 +2332,7 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        <DockBounceSettings />
         <SettingsRow
           {...searchableSetting("time-format")}
           description="System default follows your browser or OS clock preference."
@@ -3187,6 +3198,43 @@ export function GeneralSettingsPanel() {
             )
           }
         />
+
+        <SettingsRow
+          serverScoped
+          settingKeys={["replySuggestionsEnabled"]}
+          {...searchableSetting("reply-suggestions")}
+          description="Predict the next thing you might say and offer it as composer ghost text you accept with Tab. Off by default: this runs a short text generation call at the end of every turn."
+          resetAction={
+            hasServerTargets &&
+            settings.replySuggestionsEnabled !==
+              DEFAULT_UNIFIED_SETTINGS.replySuggestionsEnabled ? (
+              <SettingResetButton
+                label="suggested next reply"
+                onClick={() =>
+                  updateSettings({
+                    replySuggestionsEnabled: DEFAULT_UNIFIED_SETTINGS.replySuggestionsEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            !hasServerTargets ? (
+              <span className="text-sm text-muted-foreground">
+                Connect an environment to enable suggested replies.
+              </span>
+            ) : (
+              <ScopedSwitch
+                settingKeys={["replySuggestionsEnabled"]}
+                checked={settings.replySuggestionsEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ replySuggestionsEnabled: Boolean(checked) })
+                }
+                aria-label="Suggest a next reply"
+              />
+            )
+          }
+        />
       </SettingsSection>
 
       <SettingsSection id="about" title="About">
@@ -3221,7 +3269,7 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("open-source-licenses")}
-          description="Notices for dependencies, assets, and optional tools used by T3 Code."
+          description="Notices for dependencies, assets, and optional tools used by RyCode."
           control={
             <Button
               render={<Link to="/settings/open-source-licenses" />}

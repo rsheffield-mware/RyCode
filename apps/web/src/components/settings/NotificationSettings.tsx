@@ -1,15 +1,42 @@
-import { useState } from "react";
+import { PlayIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import {
-  hasDesktopNotifications,
+  clearCustomNotificationSound,
+  getCustomNotificationSound,
   hasNotificationSound,
   NOTIFICATION_MODE_LABELS,
-  unlockNotificationAudio,
+  prepareNotificationMode,
+  previewNotificationSound,
+  setCustomNotificationSound,
 } from "../../threadNotifications";
+import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { SettingsRow } from "./settingsLayout";
+import { Switch } from "../ui/switch";
+import { SettingResetButton, SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+
+/** Only the macOS desktop shell has a Dock, and only it can bounce the icon. */
+export function DockBounceSettings() {
+  const enabled = useScopedSettings((settings) => settings.dockBounceEnabled);
+  const updateSettings = useUpdateScopedSettings();
+  if (window.desktopBridge?.getClientPlatform?.() !== "darwin") return null;
+
+  return (
+    <SettingsRow
+      {...searchableSetting("dock-bounce")}
+      description="Keep the Dock icon bouncing while a thread waits on you, until you come back to the app. Needs thread notifications turned on."
+      control={
+        <Switch
+          checked={enabled}
+          onCheckedChange={(checked) => updateSettings({ dockBounceEnabled: checked })}
+          aria-label="Bounce Dock icon"
+        />
+      }
+    />
+  );
+}
 
 export function NotificationSettings() {
   const mode = useScopedSettings((settings) => settings.notificationMode);
@@ -22,7 +49,7 @@ export function NotificationSettings() {
       {...searchableSetting("thread-notifications")}
       description={
         permissionMessage ??
-        "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while T3 Code is open."
+        "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while RyCode is open."
       }
       control={
         <Select
@@ -37,31 +64,12 @@ export function NotificationSettings() {
             )
               return;
             setPermissionMessage(null);
-            if (hasNotificationSound(value)) unlockNotificationAudio();
-            if (hasDesktopNotifications(value)) {
-              if (typeof Notification === "undefined" || !window.isSecureContext) {
-                setPermissionMessage(
-                  "Notifications need a supported browser over HTTPS, or the desktop app. Sound only is still available.",
-                );
-                return;
-              }
-              setRequesting(true);
-              try {
-                const permission = await Notification.requestPermission();
-                if (permission !== "granted") {
-                  setPermissionMessage(
-                    "Allow notifications in your browser or system settings, then choose this option again. Sound only is still available.",
-                  );
-                  return;
-                }
-              } catch {
-                setPermissionMessage(
-                  "Notifications are unavailable in this browser. Sound only is still available.",
-                );
-                return;
-              } finally {
-                setRequesting(false);
-              }
+            setRequesting(true);
+            const permissionMessage = await prepareNotificationMode(value);
+            setRequesting(false);
+            if (permissionMessage) {
+              setPermissionMessage(permissionMessage);
+              return;
             }
             updateSettings({ notificationMode: value });
           }}
@@ -77,6 +85,98 @@ export function NotificationSettings() {
             ))}
           </SelectPopup>
         </Select>
+      }
+    />
+  );
+}
+
+/** Lets a device swap both notification sounds for one file the user uploads. */
+export function NotificationSoundSettings() {
+  const mode = useScopedSettings((settings) => settings.notificationMode);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // undefined until the stored sound loads, null when using the built-in sounds.
+  const [soundName, setSoundName] = useState<string | null | undefined>(undefined);
+  const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void getCustomNotificationSound().then((sound) => {
+      if (active) setSoundName(sound ? sound.name : null);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!hasNotificationSound(mode)) return null;
+
+  return (
+    <SettingsRow
+      {...searchableSetting("notification-sound")}
+      description={
+        message ??
+        (soundName
+          ? `Playing ${soundName} for every thread notification on this device.`
+          : "Upload any audio file to replace the built-in sounds on this device. Sounds stop after 10 seconds.")
+      }
+      resetAction={
+        soundName ? (
+          <SettingResetButton
+            label="notification sound"
+            disabled={saving}
+            onClick={() => {
+              setMessage(null);
+              void clearCustomNotificationSound().then(
+                () => setSoundName(null),
+                () => setMessage("Couldn't remove the custom sound. Try again."),
+              );
+            }}
+          />
+        ) : null
+      }
+      control={
+        <div className="flex items-center gap-2">
+          <input
+            ref={inputRef}
+            accept="audio/*"
+            className="sr-only"
+            type="file"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (!file) return;
+              setMessage(null);
+              setSaving(true);
+              setCustomNotificationSound(file)
+                .then((sound) => {
+                  setSoundName(sound.name);
+                  return previewNotificationSound();
+                })
+                .catch((error: unknown) => {
+                  setMessage(error instanceof Error ? error.message : "Couldn't save that sound.");
+                })
+                .finally(() => setSaving(false));
+            }}
+          />
+          <Button
+            size="icon-sm"
+            variant="outline"
+            aria-label="Preview notification sound"
+            disabled={soundName === undefined}
+            onClick={() => void previewNotificationSound()}
+          >
+            <PlayIcon />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={saving}
+            onClick={() => inputRef.current?.click()}
+          >
+            {saving ? "Saving…" : soundName ? "Replace sound" : "Upload sound"}
+          </Button>
+        </div>
       }
     />
   );

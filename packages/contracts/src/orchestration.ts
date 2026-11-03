@@ -704,6 +704,19 @@ export const ThreadTitleRegeneration = Schema.Struct({
 export type ThreadTitleRegeneration = typeof ThreadTitleRegeneration.Type;
 
 /**
+ * The predicted next user message for a finished turn, shown as composer ghost
+ * text. Persisted with the thread projection, so it survives a reload and every
+ * client on the thread sees the same suggestion. Cleared when the next turn
+ * starts or the user sends a message.
+ */
+export const ThreadReplySuggestion = Schema.Struct({
+  text: TrimmedNonEmptyString,
+  turnId: TurnId,
+  generatedAt: IsoDateTime,
+});
+export type ThreadReplySuggestion = typeof ThreadReplySuggestion.Type;
+
+/**
  * Legacy single-PR link. Still emitted as the thread's derived current pull
  * request (see `@t3tools/shared/threadPullRequests`) so clients from before
  * `pullRequests` keep working independently of their release schedule.
@@ -841,6 +854,9 @@ export const OrchestrationThread = Schema.Struct({
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   titleState: Schema.optional(Schema.NullOr(ThreadTitleState)),
+  // Detail-only on purpose: the sidebar never renders it, so keeping it off
+  // the shell keeps shell payloads small.
+  replySuggestion: Schema.optional(Schema.NullOr(ThreadReplySuggestion)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -1602,6 +1618,21 @@ const ThreadTitleGenerateCompleteCommand = Schema.Struct({
   needsRefinement: Schema.Boolean,
 });
 
+/** Server-dispatched: a reply suggestion finished generating for a settled turn. */
+const ThreadReplySuggestionCompletedCommand = Schema.Struct({
+  type: Schema.Literal("thread.reply-suggestion.completed"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  turnId: TurnId,
+  suggestion: TrimmedNonEmptyString,
+  /**
+   * The thread's newest user message when generation started. A later one means
+   * the user answered while the model was thinking, so the suggestion is stale
+   * even though the turn has not changed.
+   */
+  expectedLatestUserMessageAt: Schema.NullOr(IsoDateTime),
+});
+
 const ThreadTitleRefineCommand = Schema.Struct({
   type: Schema.Literal("thread.title.refine"),
   commandId: CommandId,
@@ -1661,6 +1692,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadTitleRegenerationCompleteCommand,
   ThreadTitleGenerateCompleteCommand,
   ThreadTitleRefineCommand,
+  ThreadReplySuggestionCompletedCommand,
   ThreadPullRequestSyncCommand,
   ThreadPullRequestLinkSyncCommand,
 ]);
@@ -1705,6 +1737,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.proposed-plan-upserted",
   "thread.turn-diff-completed",
   "thread.activity-appended",
+  "thread.reply-suggestion-completed",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
@@ -1977,6 +2010,17 @@ export const ThreadActivityAppendedPayload = Schema.Struct({
   activity: OrchestrationThreadActivity,
 });
 
+export const ThreadReplySuggestionCompletedPayload = Schema.Struct({
+  threadId: ThreadId,
+  turnId: TurnId,
+  suggestion: TrimmedNonEmptyString,
+  generatedAt: IsoDateTime,
+  /** See the command field: consumers drop the suggestion when this has moved on. */
+  expectedLatestUserMessageAt: Schema.NullOr(IsoDateTime),
+});
+export type ThreadReplySuggestionCompletedPayload =
+  typeof ThreadReplySuggestionCompletedPayload.Type;
+
 /**
  * Which client connection dispatched the command that produced an event.
  * Stamped by the orchestration engine on client-dispatched commands; absent on
@@ -2178,6 +2222,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.activity-appended"),
     payload: ThreadActivityAppendedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.reply-suggestion-completed"),
+    payload: ThreadReplySuggestionCompletedPayload,
   }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;

@@ -74,7 +74,7 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 ## Quote an assistant response
 
 On web and desktop, select text within one assistant response and choose
-**Cite in composer**. You can add a comment about the quote and write instructions
+**Reply**. The selected passage is added to your draft. You can add a comment about the quote and write instructions
 around it.
 
 Select the quote in a draft or sent message to return to its source. If the source
@@ -102,6 +102,20 @@ When the composer has text, the arrow keys move the caret as usual. Recall takes
 the text is an unedited recalled prompt, with the caret on the first visual line for `ArrowUp` or
 the last visual line for `ArrowDown`, counting wrapped lines. Editing a recalled prompt turns it
 into a normal draft.
+
+## Suggested next reply
+
+On web and desktop, T3 Code can predict what you are likely to say next once the
+agent finishes a turn. The prediction appears as dimmed text in an empty
+composer. Press `Tab` to put it in the composer and edit it, or `Escape` to
+dismiss it. It is replaced when the next turn ends and disappears once you start
+typing or attach a file.
+
+This is off by default because it runs a short model call at the end of every
+turn on the model chosen in **Settings → General → Text generation**. Turn it on
+in **Settings → General → Suggested next reply**, for every project or for one
+of them. The suggestion is made on the server, so every device on that thread
+sees the same one.
 
 ## Edit an earlier prompt
 

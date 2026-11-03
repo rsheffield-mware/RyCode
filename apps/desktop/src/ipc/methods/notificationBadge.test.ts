@@ -10,12 +10,15 @@ const native = vi.hoisted(() => ({
   getFocusedWindow: vi.fn(() => null as object | null),
   image: { isEmpty: vi.fn(() => false) },
   createFromDataURL: vi.fn(),
+  bounce: vi.fn(() => 7),
+  cancelBounce: vi.fn(),
   webContents: { send: vi.fn() },
   listeners: new Map<string, () => void>(),
 }));
 vi.mock("electron", () => ({
   app: {
     setBadgeCount: native.setBadgeCount,
+    dock: { bounce: native.bounce, cancelBounce: native.cancelBounce },
     on: (event: string, listener: () => void) => native.listeners.set(event, listener),
     removeListener: (event: string) => native.listeners.delete(event),
   },
@@ -30,7 +33,7 @@ import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import { applyNotificationBadge, installNotificationBadge } from "./notificationBadge.ts";
 
-const badge = { count: 2, image: "data:image/png;base64,aGVsbG8=" };
+const badge = { count: 2, image: "data:image/png;base64,aGVsbG8=", bounce: true };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -44,9 +47,35 @@ beforeEach(() => {
 
 it.each(["darwin", "linux"] as const)("sets and clears the native %s count", (platform) => {
   applyNotificationBadge(platform, badge);
-  applyNotificationBadge(platform, { count: 0, image: null });
+  applyNotificationBadge(platform, { count: 0, image: null, bounce: false });
   expect(native.setBadgeCount.mock.calls).toEqual([[2], [0]]);
   expect(native.createFromDataURL).not.toHaveBeenCalled();
+});
+
+it("bounces the macOS dock once until the badge clears", () => {
+  applyNotificationBadge("darwin", { count: 0, image: null, bounce: false });
+  native.cancelBounce.mockClear();
+  applyNotificationBadge("darwin", badge);
+  applyNotificationBadge("darwin", { count: 3, image: null, bounce: true });
+  expect(native.bounce.mock.calls).toEqual([["critical"]]);
+  expect(native.cancelBounce).not.toHaveBeenCalled();
+  applyNotificationBadge("darwin", { count: 0, image: null, bounce: false });
+  expect(native.cancelBounce).toHaveBeenCalledWith(7);
+});
+
+it("leaves the dock alone on other platforms", () => {
+  applyNotificationBadge("linux", badge);
+  applyNotificationBadge("win32", badge);
+  expect(native.bounce).not.toHaveBeenCalled();
+});
+
+it("cancels an in-flight bounce when the setting is turned off", () => {
+  applyNotificationBadge("darwin", badge);
+  expect(native.bounce).toHaveBeenCalledOnce();
+  applyNotificationBadge("darwin", { ...badge, bounce: false });
+  expect(native.cancelBounce).toHaveBeenCalledWith(7);
+  applyNotificationBadge("darwin", { ...badge, bounce: false });
+  expect(native.bounce).toHaveBeenCalledOnce();
 });
 
 it("sets and clears the Windows taskbar overlay", () => {
@@ -55,7 +84,7 @@ it("sets and clears the Windows taskbar overlay", () => {
     native.image,
     "2 threads with new notifications",
   );
-  applyNotificationBadge("win32", { count: 0, image: null });
+  applyNotificationBadge("win32", { count: 0, image: null, bounce: false });
   expect(native.setOverlayIcon).toHaveBeenLastCalledWith(null, "");
 });
 
@@ -114,7 +143,9 @@ it.effect("validates IPC and clears on native focus, quit, and disposal", () =>
         yield* Effect.promise(() => Promise.resolve(handler(event, badge)));
         expect(native.setBadgeCount).toHaveBeenLastCalledWith(0);
         expect(native.webContents.send).toHaveBeenCalledTimes(2);
-        yield* Effect.promise(() => Promise.resolve(handler(event, { count: 0, image: null })));
+        yield* Effect.promise(() =>
+          Promise.resolve(handler(event, { count: 0, image: null, bounce: false })),
+        );
         expect(native.webContents.send).toHaveBeenCalledTimes(2);
         native.getFocusedWindow.mockReturnValue(null);
         yield* Effect.promise(() => Promise.resolve(handler(event, badge)));

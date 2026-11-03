@@ -17,11 +17,13 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildReplySuggestionPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
+  sanitizeReplySuggestion,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 import {
@@ -54,7 +56,8 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateReplySuggestion";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -263,10 +266,28 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  const generateReplySuggestion: TextGeneration.TextGeneration["Service"]["generateReplySuggestion"] =
+    Effect.fn("GrokTextGeneration.generateReplySuggestion")(function* (input) {
+      const { prompt, outputSchema } = buildReplySuggestionPrompt({
+        transcript: input.transcript,
+      });
+
+      const generated = yield* runGrokJson({
+        operation: "generateReplySuggestion",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return { suggestion: sanitizeReplySuggestion(generated.suggestion) };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateReplySuggestion,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

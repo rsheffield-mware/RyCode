@@ -30,7 +30,7 @@ const environmentInput = {
 
 const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
   metadata: Effect.die("unexpected metadata read"),
-  name: Effect.succeed("T3 Code"),
+  name: Effect.succeed("RyCode"),
   systemLocale: Effect.succeed("en-US"),
   whenReady: Effect.void,
   quit: Effect.void,
@@ -244,6 +244,113 @@ describe("DesktopApplicationMenu", () => {
 
       zoomIn.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
       assert.equal(yield* Deferred.await(selectedAction), "zoom-in");
+    }),
+  );
+
+  it.effect("routes the pane items through the renderer, which owns the pane row", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate);
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const viewMenu = template.find((item) => item.label === "View");
+      if (!Array.isArray(viewMenu?.submenu)) {
+        throw new Error("Expected View menu submenu to be an array.");
+      }
+      const splitRight = viewMenu.submenu.find((item) => item.label === "Split Right...");
+      assert.isDefined(splitRight);
+      assert.equal(splitRight.accelerator, "CmdOrCtrl+\\");
+      const splitDown = viewMenu.submenu.find((item) => item.label === "Split Down...");
+      assert.isDefined(splitDown);
+      assert.equal(splitDown.accelerator, "CmdOrCtrl+Alt+\\");
+      const closePane = viewMenu.submenu.find((item) => item.label === "Close Pane");
+      assert.isDefined(closePane);
+      assert.equal(closePane.accelerator, "CmdOrCtrl+Shift+\\");
+      // Every pane accelerator has to be distinct: Electron silently drops the
+      // later duplicate, which would make one of these items dead.
+      assert.equal(
+        new Set([splitRight.accelerator, splitDown.accelerator, closePane.accelerator]).size,
+        3,
+      );
+      if (typeof splitRight.click !== "function") {
+        throw new Error("Expected Split Right menu item to have a click handler.");
+      }
+
+      splitRight.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      assert.equal(yield* Deferred.await(selectedAction), "split-right");
+    }),
+  );
+
+  it.effect("splits downward through the renderer", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate);
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const viewMenu = template.find((item) => item.label === "View");
+      if (!Array.isArray(viewMenu?.submenu)) {
+        throw new Error("Expected View menu submenu to be an array.");
+      }
+      const splitDown = viewMenu.submenu.find((item) => item.label === "Split Down...");
+      if (typeof splitDown?.click !== "function") {
+        throw new Error("Expected Split Down menu item to have a click handler.");
+      }
+
+      splitDown.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      assert.equal(yield* Deferred.await(selectedAction), "split-down");
+    }),
+  );
+
+  it.effect("closes a pane through the renderer", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate);
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const viewMenu = template.find((item) => item.label === "View");
+      if (!Array.isArray(viewMenu?.submenu)) {
+        throw new Error("Expected View menu submenu to be an array.");
+      }
+      const closePane = viewMenu.submenu.find((item) => item.label === "Close Pane");
+      if (typeof closePane?.click !== "function") {
+        throw new Error("Expected Close Pane menu item to have a click handler.");
+      }
+
+      closePane.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      assert.equal(yield* Deferred.await(selectedAction), "close-pane");
+    }),
+  );
+
+  // Only the chords this template spells out. Electron roles carry their own
+  // platform accelerators, and the app's keybindings live in the renderer;
+  // neither is visible here, so both are checked by hand when a chord is added.
+  it.effect("spells no accelerator twice", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate);
+
+      const collect = (
+        items: readonly Electron.MenuItemConstructorOptions[],
+      ): ReadonlyArray<string> =>
+        items.flatMap((item) => [
+          ...(typeof item.accelerator === "string" ? [item.accelerator] : []),
+          ...(Array.isArray(item.submenu) ? collect(item.submenu) : []),
+        ]);
+
+      const accelerators = collect(yield* Deferred.await(applicationMenuTemplate));
+      assert.deepEqual(accelerators, [...new Set(accelerators)]);
     }),
   );
 });

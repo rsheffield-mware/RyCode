@@ -132,17 +132,66 @@ describe("browserSurfaceStore", () => {
     ).toEqual(staleRect);
   });
 
-  it("ignores updates and releases from a stale surface lease", () => {
+  it("keeps a visible surface with its holder when a second slot offers the same layer", () => {
     const tabId = "leased-browser-surface";
-    const staleRect = { x: 0, y: 0, width: 500, height: 700 };
-    const liveRect = { x: 10, y: 20, width: 900, height: 640 };
-    const staleLease = acquireBrowserSurface(tabId);
-    staleLease.present(staleRect, true);
+    const heldRect = { x: 0, y: 0, width: 500, height: 700 };
+    const rivalRect = { x: 10, y: 20, width: 900, height: 640 };
+    const holder = acquireBrowserSurface(tabId);
+    holder.present(heldRect, true);
 
-    const liveLease = acquireBrowserSurface(tabId);
-    liveLease.present(liveRect, true);
-    expect(staleLease.present(staleRect, true)).toBe(false);
-    staleLease.release();
+    const rival = acquireBrowserSurface(tabId);
+    expect(rival.present(rivalRect, true)).toBe(false);
+    expect(holder.present(heldRect, true)).toBe(true);
+
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]).toMatchObject({
+      rect: heldRect,
+      visible: true,
+    });
+  });
+
+  it("hands a visible surface to a slot that would draw it on top", () => {
+    const tabId = "layered-lease-browser-surface";
+    const panelRect = { x: 0, y: 0, width: 500, height: 700 };
+    const miniPlayerRect = { x: 10, y: 20, width: 320, height: 200 };
+    const panel = acquireBrowserSurface(tabId);
+    panel.present(panelRect, true, 0, 30);
+
+    const miniPlayer = acquireBrowserSurface(tabId);
+    expect(miniPlayer.present(miniPlayerRect, true, 12, 48)).toBe(true);
+    expect(panel.present(panelRect, true, 0, 30)).toBe(false);
+
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]).toMatchObject({
+      rect: miniPlayerRect,
+      visible: true,
+      zIndex: 48,
+    });
+  });
+
+  it("hands a surface on as soon as its holder stops showing the guest", () => {
+    const tabId = "yielded-browser-surface";
+    const waitingRect = { x: 4, y: 8, width: 640, height: 480 };
+    const holder = acquireBrowserSurface(tabId);
+    holder.present({ x: 0, y: 0, width: 500, height: 700 }, true);
+
+    const waiting = acquireBrowserSurface(tabId);
+    expect(waiting.present(waitingRect, true)).toBe(false);
+    holder.present({ x: 0, y: 0, width: 500, height: 700 }, false);
+    expect(waiting.present(waitingRect, true)).toBe(true);
+
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]).toMatchObject({
+      rect: waitingRect,
+      visible: true,
+    });
+  });
+
+  it("ignores a release from a slot that no longer holds the surface", () => {
+    const tabId = "released-rival-browser-surface";
+    const liveRect = { x: 10, y: 20, width: 900, height: 640 };
+    const displaced = acquireBrowserSurface(tabId);
+    const live = acquireBrowserSurface(tabId);
+    live.present(liveRect, true);
+
+    displaced.release();
 
     expect(useBrowserSurfaceStore.getState().byTabId[tabId]).toMatchObject({
       rect: liveRect,

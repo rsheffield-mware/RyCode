@@ -6,7 +6,12 @@ import {
 } from "../composerFooterLayout";
 import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
 
-function measurePicker(input: { clientWidth: number; flexGrow: string; maxWidth?: string }) {
+function measurePicker(input: {
+  clientWidth: number;
+  flexGrow: string;
+  maxWidth?: string;
+  trailingWidth?: number;
+}) {
   const label = { clientWidth: input.clientWidth, scrollWidth: 160 };
   const picker = {
     getBoundingClientRect: () => ({ width: 52 }),
@@ -17,6 +22,9 @@ function measurePicker(input: { clientWidth: number; flexGrow: string; maxWidth?
       if (selector === "[data-chat-provider-model-picker]") return picker;
       if (selector === "[data-resting-controls-overflow]") {
         return { getBoundingClientRect: () => ({ width: 24 }) };
+      }
+      if (selector === "[data-resting-controls-trailing]" && input.trailingWidth !== undefined) {
+        return { getBoundingClientRect: () => ({ width: input.trailingWidth }) };
       }
       return null;
     },
@@ -66,6 +74,18 @@ describe("measureRestingComposerControls", () => {
     const measurement = measurePicker({ clientWidth: 0, flexGrow: "1" });
 
     expect(measurement.naturalFixedWidth).toBe(212);
+    expect(resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 200 })).toEqual({
+      hiddenCount: 1,
+      iconOnlyCount: 1,
+      visible: true,
+    });
+  });
+
+  it("reserves the trailing paperclip and meters in both fixed widths", () => {
+    const measurement = measurePicker({ clientWidth: 0, flexGrow: "0", trailingWidth: 56 });
+
+    expect(measurement.naturalFixedWidth).toBe(52 + 56 + 4);
+    expect(measurement.minimumFixedWidth).toBe(52 + 56 + 4);
     expect(resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 200 })).toEqual({
       hiddenCount: 1,
       iconOnlyCount: 1,

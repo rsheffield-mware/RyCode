@@ -125,6 +125,12 @@ export interface ComposerPromptEditorProps {
   skills: ReadonlyArray<ServerProviderSkill>;
   disabled: boolean;
   placeholder: string;
+  /**
+   * Predicted next message shown in place of the placeholder. The parent
+   * resolves exactly one value for showing it and for accepting it on Tab, so
+   * passing a value here means it is accept-ready.
+   */
+  replySuggestion?: string | undefined;
   containerClassName?: string;
   className?: string;
   placeholderClassName?: string;
@@ -574,6 +580,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     skills,
     disabled,
     placeholder,
+    replySuggestion,
     containerClassName,
     className,
     placeholderClassName,
@@ -734,9 +741,11 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
       ),
       "data-testid": "composer-editor",
       "data-composer-rich-text": richText ? "true" : "false",
-      "aria-placeholder": placeholder,
+      "aria-placeholder": replySuggestion
+        ? `Suggested reply: ${replySuggestion}. Press Tab to use it.`
+        : placeholder,
     }),
-    [className, placeholder, richText],
+    [className, placeholder, replySuggestion, richText],
   );
 
   const editor = useEditor(
@@ -1300,14 +1309,23 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
               onCopyCapture={(event) => handleCopyCut(event, false)}
               onCutCapture={(event) => handleCopyCut(event, true)}
             />
-            {isEmpty && contextRecords.size === 0 && placeholder ? (
+            {isEmpty && contextRecords.size === 0 && (replySuggestion || placeholder) ? (
               <div
                 className={cn(
                   "pointer-events-none absolute inset-0 leading-relaxed text-placeholder/75",
                   placeholderClassName,
                 )}
               >
-                {placeholder}
+                {replySuggestion ? (
+                  <span className="italic">
+                    {replySuggestion}
+                    <span className="ms-1.5 rounded-sm border border-current px-1 text-[0.6875rem] not-italic align-[0.05rem]">
+                      Tab
+                    </span>
+                  </span>
+                ) : (
+                  placeholder
+                )}
               </div>
             ) : null}
           </div>

@@ -199,6 +199,9 @@ import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
+import { usePane } from "../panes/PaneContext";
+import { readPaneOwnsGlobalHandlers } from "../panes/paneStore";
+import { PaneCloseButton } from "../panes/PaneCloseButton";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import {
@@ -1473,6 +1476,12 @@ export default function ChatView(props: ChatViewProps) {
     forceExpandedMobileComposer = false,
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
+  // Window-level handlers below are registered once per mounted ChatView. In a
+  // split layout only the focused pane may act on them; a lone pane always
+  // qualifies, so the single-pane path is unchanged.
+  const { paneId: chatPaneId, paneCount } = usePane();
+  // Viewport-anchored chrome collides across panes, so a split layout keeps it inline.
+  const paneSplitActive = paneCount > 1;
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
   const threadDetailLoading = threadSyncPhase === "loading";
   const handleNewThread = useNewThreadHandler();
@@ -1916,6 +1925,48 @@ export default function ChatView(props: ChatViewProps) {
   // depend on which route is mounted.
   const isServerThread = activeServerThread !== null;
   const activeThread = activeServerThread ?? localDraftThread;
+  const rememberAssistantText = useCallback(
+    (text: string) => {
+      const projectId = activeThread?.projectId;
+      if (!projectId) return;
+      const selected = text.trim().replace(/\s+/g, " ");
+      const current =
+        settings.projectSettingsOverrides[projectId]?.projectMemory ?? settings.projectMemory;
+      const next = [current.trim(), `- ${selected}`].filter(Boolean).join("\n");
+      if (selected.length > 1_000 || next.length > 4_000) {
+        toastManager.add({
+          type: "warning",
+          title: "Project memory is full",
+          description: "Select a shorter passage or edit Project memory in Settings.",
+        });
+        return;
+      }
+      void updateProjectScriptSettings({
+        environmentId,
+        input: {
+          patch: {
+            projectSettingsOverrides: {
+              [projectId]: {
+                ...settings.projectSettingsOverrides[projectId],
+                projectMemory: next,
+              },
+            },
+          },
+        },
+      }).then((result) => {
+        toastManager.add(
+          result._tag === "Failure"
+            ? {
+                type: "error",
+                title: "Could not save project memory",
+                description: "Try again from Project memory in Settings.",
+              }
+            : { type: "success", title: "Saved to project memory" },
+        );
+      });
+    },
+    [activeThread?.projectId, environmentId, settings, updateProjectScriptSettings],
+  );
   const threadError = isServerThread
     ? (localServerError ?? activeServerThread?.session?.lastError ?? null)
     : localDraftError;
@@ -2069,7 +2120,8 @@ export default function ChatView(props: ChatViewProps) {
   );
   const rightPanelPresent = rightPanelPresence.present;
   const rightPanelControlsInPanel = shouldUseRightPanelSheet && rightPanelPresent && rightPanelOpen;
-  const rightPanelControlsAtRoot = rightPanelPresent && !shouldUseRightPanelSheet;
+  const rightPanelControlsAtRoot =
+    rightPanelPresent && !shouldUseRightPanelSheet && !paneSplitActive;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
@@ -2601,6 +2653,12 @@ export default function ChatView(props: ChatViewProps) {
   });
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
+  const supportsReplySuggestions = serverConfig?.environment.capabilities.replySuggestions === true;
+  // Project-scoped, matching the server: an environment-scoped read here would
+  // hide the ghost text on a project that has the setting turned on, leaving
+  // the user paying for a suggestion no client ever shows.
+  const replySuggestionsEnabled = resolveProjectSettings(settings, activeThread?.projectId ?? null)
+    .settings.replySuggestionsEnabled;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
   const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
   const supportsQuestionAttachments =
@@ -4689,24 +4747,6 @@ export default function ChatView(props: ChatViewProps) {
     readonly threadKey: string;
     readonly reference: ThreadLinkedPullRequest | null;
   } | null>(null);
-  const openProjectPullRequest = useCallback(
-    (number: number) => {
-      if (
-        !supportsPullRequests ||
-        !activeThreadRef ||
-        !activeProject ||
-        activeProjectRepository === null
-      ) {
-        return;
-      }
-      useRightPanelStore.getState().openPullRequest(activeThreadRef, {
-        projectId: activeProject.id,
-        repository: activeProjectRepository,
-        number,
-      });
-    },
-    [activeProject, activeProjectRepository, activeThreadRef, supportsPullRequests],
-  );
   const proactivePanelObservationRef = useRef<ReturnType<
     typeof observeProactivePanelUserChoice
   > | null>(null);
@@ -5205,10 +5245,10 @@ export default function ChatView(props: ChatViewProps) {
   }, []);
   useEffect(
     () =>
-      subscribePreviewAction((action) => {
+      subscribePreviewAction(chatPaneId, (action) => {
         if (action === "toggle-panel") togglePreviewPanel();
       }),
-    [togglePreviewPanel],
+    [chatPaneId, togglePreviewPanel],
   );
   const persistThreadSettingsForNextTurn = useCallback(
     async (input: {
@@ -5508,6 +5548,9 @@ export default function ChatView(props: ChatViewProps) {
         // the end on the next stream chunk. Clicking message text can leave
         // DOM focus on body, so these keys must also be heard at document.
         const handleKeyDown = (event: KeyboardEvent) => {
+          // The `document.body` escape hatch below would otherwise let a key
+          // press steer every mounted timeline at once.
+          if (!readPaneOwnsGlobalHandlers(chatPaneId)) return;
           if (
             !(event.target instanceof Node) ||
             (!scrollNode.contains(event.target) &&
@@ -5576,7 +5619,7 @@ export default function ChatView(props: ChatViewProps) {
       }
       removeListeners?.();
     };
-  }, [activeThread?.id, isTimelineAtLogicalEnd, timelineRealContentOverflowsViewport]);
+  }, [activeThread?.id, isTimelineAtLogicalEnd, chatPaneId, timelineRealContentOverflowsViewport]);
 
   const onTimelineAnchorReady = useCallback((messageId: MessageId, anchorIndex: number) => {
     // Anchored-end space can be remeasured when the turn completes. Once the
@@ -5750,6 +5793,7 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport) return;
     let frame: number | null = null;
     const onWindowFocus = () => {
+      if (!readPaneOwnsGlobalHandlers(chatPaneId)) return;
       if (frame !== null) window.cancelAnimationFrame(frame);
       // The element that held focus receives it again after the window's own event, and the
       // composer ignores that same frame so a restored focus does not lift a scroll-collapsed
@@ -5766,7 +5810,7 @@ export default function ChatView(props: ChatViewProps) {
       window.removeEventListener("focus", onWindowFocus);
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, isMobileViewport, terminalUiState.terminalOpen]);
+  }, [activeThread?.id, focusComposer, isMobileViewport, chatPaneId, terminalUiState.terminalOpen]);
 
   useEffect(() => {
     if (!activeThread?.id) return;
@@ -6663,6 +6707,7 @@ export default function ChatView(props: ChatViewProps) {
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
+      if (!readPaneOwnsGlobalHandlers(chatPaneId)) return;
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
         return;
@@ -6940,6 +6985,7 @@ export default function ChatView(props: ChatViewProps) {
     confirmAndUnpinThread,
     copyActiveThreadReference,
     getShortcutContext,
+    chatPaneId,
     toggleRightPanel,
     toggleRightPanelMaximized,
     toggleTerminalVisibility,
@@ -6951,6 +6997,7 @@ export default function ChatView(props: ChatViewProps) {
   // Route it to the composer like a typed key, which also expands it.
   useEffect(() => {
     const keyHandler = (event: KeyboardEvent) => {
+      if (!readPaneOwnsGlobalHandlers(chatPaneId)) return;
       if (
         shouldRedirectInputToComposer(event) &&
         isPasteAsTextShortcut(event, isMacPlatform(navigator.platform))
@@ -6959,6 +7006,7 @@ export default function ChatView(props: ChatViewProps) {
       }
     };
     const handler = (event: ClipboardEvent) => {
+      if (!readPaneOwnsGlobalHandlers(chatPaneId)) return;
       if (!activeThreadId || isCommandPaletteOpen()) return;
       if (getTerminalFocusOwner() !== null) return;
       if (composerRef.current?.isModelPickerOpen()) return;
@@ -6982,7 +7030,7 @@ export default function ChatView(props: ChatViewProps) {
       window.removeEventListener("keydown", keyHandler, true);
       window.removeEventListener("paste", handler, true);
     };
-  }, [activeThreadId, composerRef]);
+  }, [activeThreadId, chatPaneId, composerRef]);
 
   const [pendingRevert, setPendingRevert] = useState<{
     turnCount: number;
@@ -9562,7 +9610,10 @@ export default function ChatView(props: ChatViewProps) {
       className={cn(
         // Keep one viewport anchor inside the header's no-drag region. The
         // header can shrink behind the right panel without moving the controls.
-        "pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        "pointer-events-none z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        paneSplitActive
+          ? "relative ml-auto"
+          : "fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)]",
       )}
       data-workspace-titlebar-controls
     >
@@ -9633,7 +9684,7 @@ export default function ChatView(props: ChatViewProps) {
     ) : renderedRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
       <PullRequestsUnavailableState
         title="Pull requests unavailable"
-        error="Update this environment's T3 Code server to browse pull requests."
+        error="Update this environment's RyCode server to browse pull requests."
       />
     ) : renderedRightPanelSurface?.kind === "pull-request" ? (
       // No onClose: the surface tab's own X owns closing here, and a second X in the header
@@ -9803,13 +9854,10 @@ export default function ChatView(props: ChatViewProps) {
             />
           ) : null}
           {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
+          <PaneCloseButton />
           <ChatHeader
-            {...(!supportsPullRequests || activeProjectRepository === null
-              ? {}
-              : { onOpenPullRequest: openProjectPullRequest })}
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
-            {...(routeKind === "draft" && draftId ? { draftId } : {})}
             activeThreadTitle={activeThread.title}
             isServerThread={isServerThread}
             activeProject={activeProject}
@@ -9822,6 +9870,7 @@ export default function ChatView(props: ChatViewProps) {
             availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
             gitCwd={gitCwd}
+            isGitRepo={gitStatusQuery.data?.isRepo === true}
             onNewThreadInProject={handleNewThreadInActiveProject}
             {...(activeDraftLogicalProjectKey
               ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
@@ -9883,6 +9932,11 @@ export default function ChatView(props: ChatViewProps) {
                 {...(!paintOnlyDisplayedTimeline
                   ? {
                       onCiteAssistantText: citeAssistantText,
+                      onRememberAssistantText:
+                        activeThread?.projectId &&
+                        serverConfig?.environment.capabilities.projectMemory === true
+                          ? rememberAssistantText
+                          : undefined,
                       agentPanelModel,
                       onOpenAgents: addAgentsSurface,
                       onUseArtifactTemplate: useArtifactTemplate,
@@ -9994,7 +10048,7 @@ export default function ChatView(props: ChatViewProps) {
               className={
                 isDraftHeroState
                   ? "pointer-events-none absolute inset-0 z-20 flex items-center"
-                  : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
+                  : "pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-[linear-gradient(to_bottom,transparent,var(--background)_0.5rem)] pt-1.5 sm:pt-2"
               }
             >
               <div
@@ -10054,6 +10108,8 @@ export default function ChatView(props: ChatViewProps) {
                             routeThreadRef={routeThreadRef}
                             draftId={draftId}
                             activeThreadId={activeThreadId}
+                            supportsReplySuggestions={supportsReplySuggestions}
+                            replySuggestionsEnabled={replySuggestionsEnabled}
                             activeThreadEnvironmentId={activeThread?.environmentId}
                             activeThread={activeThread}
                             activeThreadShell={routeServerThreadShell}

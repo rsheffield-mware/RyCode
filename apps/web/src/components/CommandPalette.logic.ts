@@ -15,6 +15,7 @@ import { sortThreads } from "../lib/threadSort";
 import { normalizeSearchText } from "../lib/utils";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
+import type { PaneEdge } from "../panes/paneLayout";
 
 export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
@@ -62,6 +63,7 @@ export type SearchOverlayMode = "command" | "files" | "content";
 
 export type CommandPaletteOpenIntent =
   | { readonly kind: "add-project" | "new-thread-in" | "change-theme" }
+  | { readonly kind: "thread-in-new-pane"; readonly edge: PaneEdge }
   | {
       readonly kind: "search";
       readonly query: string;
@@ -84,6 +86,7 @@ export type CommandPaletteUiAction =
     }
   | { readonly _tag: "OpenAddProject" }
   | { readonly _tag: "OpenNewThreadIn" }
+  | { readonly _tag: "OpenThreadInNewPane"; readonly edge: PaneEdge }
   | { readonly _tag: "OpenChangeTheme" }
   | { readonly _tag: "ClearOpenIntent" };
 
@@ -114,6 +117,12 @@ export function reduceCommandPaletteUiState(
       return { open: true, mode: "command", openIntent: { kind: "add-project" } };
     case "OpenNewThreadIn":
       return { open: true, mode: "command", openIntent: { kind: "new-thread-in" } };
+    case "OpenThreadInNewPane":
+      return {
+        open: true,
+        mode: "command",
+        openIntent: { kind: "thread-in-new-pane", edge: action.edge },
+      };
     case "OpenChangeTheme":
       return { open: true, mode: "command", openIntent: { kind: "change-theme" } };
     case "ClearOpenIntent":

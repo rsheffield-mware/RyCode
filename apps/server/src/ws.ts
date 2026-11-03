@@ -347,7 +347,8 @@ export function isThreadDetailEvent(event: OrchestrationEvent): event is Extract
       | "thread.activity-appended"
       | "thread.turn-diff-completed"
       | "thread.reverted"
-      | "thread.session-set";
+      | "thread.session-set"
+      | "thread.reply-suggestion-completed";
   }
 > {
   return (
@@ -356,7 +357,8 @@ export function isThreadDetailEvent(event: OrchestrationEvent): event is Extract
     event.type === "thread.activity-appended" ||
     event.type === "thread.turn-diff-completed" ||
     event.type === "thread.reverted" ||
-    event.type === "thread.session-set"
+    event.type === "thread.session-set" ||
+    event.type === "thread.reply-suggestion-completed"
   );
 }
 
@@ -868,6 +870,10 @@ const makeWsRpcLayer = (
             );
           case "thread.unarchived":
             return threadUpsertOrRemove(ThreadId.make(event.aggregateId), event.sequence);
+          // Detail-only state. Refetching the shell for it would broadcast a
+          // byte-identical thread row to every shell subscriber.
+          case "thread.reply-suggestion-completed":
+            return Effect.succeed(Option.none());
           default:
             if (event.aggregateKind !== "thread") {
               return Effect.succeed(Option.none());

@@ -129,6 +129,9 @@ importers:
       knip:
         specifier: 6.34.0
         version: 6.34.0
+      sharp:
+        specifier: 0.35.4
+        version: 0.35.4(@types/node@24.12.4)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

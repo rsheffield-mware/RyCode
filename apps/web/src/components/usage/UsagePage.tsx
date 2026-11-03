@@ -61,6 +61,7 @@ import {
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { UsageLimitsSection } from "./UsageLimits";
+import { UsageOverview } from "./UsageOverview";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
 import { PROVIDER_ORDER, PROVIDER_PRESENTATION, providersWithUsage } from "./usageProviders";
@@ -386,6 +387,7 @@ export function UsagePage() {
               <UsageSkeleton />
             ) : (
               <>
+                {isPast24Hours ? null : <UsageOverview days={days} merged={merged} />}
                 <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
                   <div className="flex min-w-0 flex-col gap-5">
                     <div className="flex flex-col gap-1">

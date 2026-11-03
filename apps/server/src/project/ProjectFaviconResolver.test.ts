@@ -123,6 +123,25 @@ it.layer(TestLayer)("ProjectFaviconResolverLive", (it) => {
       }),
     );
 
+    it.effect("falls back to a root icon.png after other well-known files", () =>
+      Effect.gen(function* () {
+        const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "icon.png", "png");
+
+        expect(yield* resolver.resolvePath(cwd)).toBe(path.join(cwd, "icon.png"));
+
+        const otherCwd = yield* makeTempDir;
+        yield* writeTextFile(otherCwd, "icon.png", "png");
+        yield* writeTextFile(otherCwd, "assets/logo.png", "png");
+
+        expect(yield* resolver.resolvePath(otherCwd)).toBe(
+          path.join(otherCwd, "assets", "logo.png"),
+        );
+      }),
+    );
+
     it.effect("prefers a t3.json iconPath over well-known files", () =>
       Effect.gen(function* () {
         const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;

@@ -43,6 +43,7 @@ import { useRightPanelStore } from "~/rightPanelStore";
 
 import { previewBridge } from "./previewBridge";
 import { subscribePreviewAction } from "./previewActionBus";
+import { usePane } from "../../panes/PaneContext";
 import { openPreviewSession } from "./openPreviewSession";
 import { PreviewChromeRow } from "./PreviewChromeRow";
 import { PreviewEmptyState } from "./PreviewEmptyState";
@@ -104,6 +105,7 @@ export function PreviewView({
   visible,
   onSendAnnotation,
 }: Props) {
+  const { paneId: previewPaneId } = usePane();
   const [focusUrlNonce, setFocusUrlNonce] = useState<number | undefined>(undefined);
   const [pickActive, setPickActive] = useState(false);
   const activeRecordingTabIds = useActiveBrowserRecordingTabIds();
@@ -682,7 +684,7 @@ export function PreviewView({
   // URL-aware handler regardless of whether the panel is currently mounted.
   useEffect(() => {
     if (!visible) return;
-    return subscribePreviewAction((action) => {
+    return subscribePreviewAction(previewPaneId, (action) => {
       switch (action) {
         case "refresh":
           handleRefresh();
@@ -703,7 +705,7 @@ export function PreviewView({
           return;
       }
     });
-  }, [handleRefresh, handleResetZoom, handleZoomIn, handleZoomOut, visible]);
+  }, [handleRefresh, handleResetZoom, handleZoomIn, handleZoomOut, previewPaneId, visible]);
 
   return (
     <div

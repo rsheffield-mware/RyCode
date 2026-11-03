@@ -7,6 +7,7 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
+import { useRef } from "react";
 
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
@@ -23,6 +24,7 @@ import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { Switch } from "../ui/switch";
 import type { ProjectSettingsCategory } from "./ProjectSettingsPanel";
@@ -73,6 +75,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   );
   const activeEntry = entries.find((entry) => entry.instanceId === selection?.instanceId);
   const mixedModel = useScopedSettingsMixed(["defaultModelSelection"]);
+  const mixedMemory = useScopedSettingsMixed(["projectMemory"]);
+  const memoryEditedRef = useRef(false);
   const mixedPermissions = useScopedSettingsMixed(["defaultRuntimeMode"]);
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
@@ -83,6 +87,9 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const modelSource = useScopedSettingSource(["defaultModelSelection"]);
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   const unavailable = connectedEnvironments.length === 0;
+  const supportsProjectMemory = connectedEnvironments.every(
+    (environment) => environment.serverConfig?.environment.capabilities.projectMemory === true,
+  );
   // File-backed keys show their effective value; the target already carries
   // the checkout's t3.json, and a null file here only fills the built-in.
   // The reset arrow beside the title clears the tier (SettingsRow handles a
@@ -140,7 +147,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       }
       title={
         category === "general"
-          ? "New threads"
+          ? "Context and new threads"
           : category === "integrations"
             ? "Browser"
             : "Repositories"
@@ -148,6 +155,40 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
     >
       {category === "general" ? (
         <>
+          {supportsProjectMemory ? (
+            <SettingsRow
+              serverScoped
+              settingKeys={["projectMemory"]}
+              mixed={mixedMemory}
+              id="project-memory"
+              title="Project memory"
+              description="Notes you explicitly save for the agent to use in every turn. Edit or clear them here."
+              control={
+                <div className="w-full sm:w-96">
+                  <Textarea
+                    key={`${scope.kind}:${settings.projectMemory}:${mixedMemory}`}
+                    aria-label="Project memory"
+                    size="sm"
+                    maxLength={4000}
+                    defaultValue={mixedMemory ? "" : settings.projectMemory}
+                    placeholder={
+                      mixedMemory
+                        ? "Different memories on selected environments"
+                        : "Add a decision or preference"
+                    }
+                    onChange={() => {
+                      memoryEditedRef.current = true;
+                    }}
+                    onBlur={(event) => {
+                      if (!memoryEditedRef.current) return;
+                      memoryEditedRef.current = false;
+                      updateSettings({ projectMemory: event.currentTarget.value.trim() });
+                    }}
+                  />
+                </div>
+              }
+            />
+          ) : null}
           <SettingsRow
             serverScoped
             settingKeys={["defaultModelSelection"]}

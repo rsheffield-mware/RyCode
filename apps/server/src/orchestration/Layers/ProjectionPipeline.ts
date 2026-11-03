@@ -1008,6 +1008,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             updatedAt: event.occurredAt,
+            // The user has moved on; a suggestion for the previous turn is stale
+            // whether or not its turn has started yet.
+            ...(event.payload.role === "user" ? { replySuggestion: null } : {}),
             latestUserMessageAt:
               event.payload.role === "user" &&
               !isImportedAgentSessionMessageId(event.payload.messageId) &&
@@ -1045,13 +1048,46 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           if (Option.isNone(existingRow)) {
             return;
           }
+          const startsNewTurn =
+            event.payload.session.activeTurnId !== null &&
+            event.payload.session.activeTurnId !== existingRow.value.latestTurnId;
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             // activeTurnId describes current work; a terminal session must not erase history.
             latestTurnId: event.payload.session.activeTurnId ?? existingRow.value.latestTurnId,
+            // A suggestion belongs to the turn that produced it.
+            ...(startsNewTurn ? { replySuggestion: null } : {}),
             updatedAt: event.occurredAt,
           });
           yield* refreshThreadShellSummary(event.payload.threadId);
+          return;
+        }
+
+        case "thread.reply-suggestion-completed": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          // This row is the same source the reactor sampled before generating,
+          // so a newer user message here means the user already answered.
+          if (
+            existingRow.value.latestUserMessageAt !== event.payload.expectedLatestUserMessageAt ||
+            existingRow.value.latestTurnId !== event.payload.turnId
+          ) {
+            return;
+          }
+          // updatedAt is left alone: a suggestion is not thread activity and
+          // must not reorder the sidebar.
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            replySuggestion: {
+              text: event.payload.suggestion,
+              turnId: event.payload.turnId,
+              generatedAt: event.payload.generatedAt,
+            },
+          });
           return;
         }
 

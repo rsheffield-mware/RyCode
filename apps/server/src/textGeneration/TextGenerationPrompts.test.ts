@@ -4,10 +4,12 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildReplySuggestionPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   normalizeCliError,
+  sanitizeReplySuggestion,
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "./TextGenerationUtils.ts";
@@ -195,7 +197,7 @@ describe("buildThreadTitlePrompt", () => {
     });
 
     expect(result.prompt).toContain(
-      "Regenerate the title for an existing T3 Code thread so the user can recognize it weeks later.",
+      "Regenerate the title for an existing RyCode thread so the user can recognize it weeks later.",
     );
     expect(result.prompt).toContain('The previous title was "Investigate reconnect regressions".');
     expect(result.prompt).toContain("Thread contents:");
@@ -328,5 +330,56 @@ describe("normalizeCliError", () => {
 
     expect(result.detail).toBe("Failed to generate a commit message");
     expect(result.message).not.toContain("secret-token");
+  });
+});
+
+describe("buildReplySuggestionPrompt", () => {
+  it("carries the transcript and asks for the user's own voice", () => {
+    const result = buildReplySuggestionPrompt({
+      transcript: "USER:\nAdd a retry\n\nASSISTANT:\nShould I retry on 429 only?",
+    });
+
+    expect(result.prompt).toContain("Should I retry on 429 only?");
+    expect(result.prompt).toContain("Thread contents:");
+    expect(result.prompt).toContain("first-person voice");
+    expect(result.prompt).toContain("empty string");
+    expect(toJsonSchemaObject(result.outputSchema)).toMatchObject({
+      properties: { suggestion: { type: "string" } },
+      required: ["suggestion"],
+    });
+  });
+
+  it("truncates an oversized transcript instead of sending it whole", () => {
+    const result = buildReplySuggestionPrompt({ transcript: "x".repeat(20_000) });
+
+    expect(result.prompt).toContain("[truncated]");
+    expect(result.prompt).not.toContain("x".repeat(10_000));
+  });
+});
+
+describe("sanitizeReplySuggestion", () => {
+  it("collapses internal newlines and surrounding whitespace to single spaces", () => {
+    expect(sanitizeReplySuggestion("  Yes, retry\n\non 429 only.\tThanks  ")).toBe(
+      "Yes, retry on 429 only. Thanks",
+    );
+  });
+
+  it("strips one layer of wrapping quotes", () => {
+    expect(sanitizeReplySuggestion('"Ship it."')).toBe("Ship it.");
+    expect(sanitizeReplySuggestion("\u201cShip it.\u201d")).toBe("Ship it.");
+    expect(sanitizeReplySuggestion("Let's ship it.")).toBe("Let's ship it.");
+  });
+
+  it("returns an empty string when nothing usable remains", () => {
+    expect(sanitizeReplySuggestion("")).toBe("");
+    expect(sanitizeReplySuggestion("   \n  ")).toBe("");
+    expect(sanitizeReplySuggestion('""')).toBe("");
+  });
+
+  it("caps a runaway suggestion", () => {
+    const capped = sanitizeReplySuggestion("a".repeat(2_000));
+
+    expect(capped).toHaveLength(500);
+    expect(capped.endsWith("...")).toBe(true);
   });
 });

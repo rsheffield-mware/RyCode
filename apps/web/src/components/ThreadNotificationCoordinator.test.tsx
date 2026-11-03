@@ -61,7 +61,7 @@ vi.mock("../hooks/useSettings", () => ({
       settings: Pick<ClientSettings, "notificationMode" | "inAppNotificationsEnabled">,
     ) => unknown,
   ) => select({ notificationMode: state.mode, inAppNotificationsEnabled: state.inApp }),
-  getClientSettings: () => ({ notificationMode: state.mode }),
+  getClientSettings: () => ({ notificationMode: state.mode, dockBounceEnabled: true }),
 }));
 vi.mock("../state/environments", () => ({
   useEnvironments: () => ({ environments: [{ environmentId: "env-1" }] }),

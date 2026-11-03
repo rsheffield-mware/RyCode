@@ -123,7 +123,7 @@ describe("orchestration projector", () => {
           projects: [
             {
               id: ProjectId.make("project-1"),
-              title: "T3 Code",
+              title: "RyCode",
               workspaceRoot: "/repo",
               defaultModelSelection: null,
               scripts: [],
@@ -1234,6 +1234,84 @@ describe("orchestration projector", () => {
       const thread = model.threads.find((entry) => entry.id === threadId);
       expect(thread?.activities).toHaveLength(501);
       expect(thread?.activities[0]?.id).toBe(`worktree-setup:${threadId}`);
+    }),
+  );
+
+  effectIt.effect("drops a stale reply suggestion when the next turn starts", () =>
+    Effect.gen(function* () {
+      const now = "2026-05-01T00:00:00.000Z";
+      const created = yield* projectEvent(
+        createEmptyReadModel(now),
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: now,
+          commandId: "cmd-thread-create",
+          payload: {
+            threadId: "thread-1",
+            projectId: "project-1",
+            title: "demo",
+            modelSelection: { provider: ProviderDriverKind.make("codex"), model: "gpt-5-codex" },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      );
+      const suggested = yield* projectEvent(
+        created,
+        makeEvent({
+          sequence: 2,
+          type: "thread.reply-suggestion-completed",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: now,
+          commandId: "cmd-reply-suggestion",
+          payload: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            suggestion: "Yes, retry on 429 only.",
+            generatedAt: now,
+            expectedLatestUserMessageAt: null,
+          },
+        }),
+      );
+      expect(suggested.threads[0]?.replySuggestion?.text).toBe("Yes, retry on 429 only.");
+      // A suggestion is not thread activity, so it must not reorder the sidebar.
+      expect(suggested.threads[0]?.updatedAt).toBe(now);
+
+      const startedAt = "2026-05-01T00:05:00.000Z";
+      const nextTurn = yield* projectEvent(
+        suggested,
+        makeEvent({
+          sequence: 3,
+          type: "thread.session-set",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: startedAt,
+          commandId: "cmd-running",
+          payload: {
+            threadId: "thread-1",
+            session: {
+              threadId: "thread-1",
+              status: "running",
+              providerName: "codex",
+              providerSessionId: "session-1",
+              providerThreadId: "provider-thread-1",
+              runtimeMode: "full-access",
+              activeTurnId: "turn-2",
+              lastError: null,
+              updatedAt: startedAt,
+            },
+          },
+        }),
+      );
+
+      expect(nextTurn.threads[0]?.replySuggestion).toBeNull();
     }),
   );
 });

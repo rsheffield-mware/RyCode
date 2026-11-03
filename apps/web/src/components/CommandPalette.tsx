@@ -32,6 +32,7 @@ import {
   type EnvironmentMachineKind,
   type FilesystemBrowseResult,
   type ProjectId,
+  type ScopedThreadRef,
   type SourceControlDiscoveryResult,
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
@@ -43,6 +44,8 @@ import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
+  ColumnsIcon,
+  RowsIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
@@ -177,6 +180,8 @@ import {
 } from "./ThreadCommandSubtitle";
 import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
 import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
+import { useChatPaneActions } from "../panes/usePanes";
+import type { PaneEdge } from "../panes/paneLayout";
 import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../providerInstances";
 import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
 import { CommandDialog, CommandDialogPopup, CommandFooterAction } from "./ui/command";
@@ -481,6 +486,10 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   );
   const openAddProject = useCallback(() => dispatch({ _tag: "OpenAddProject" }), []);
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
+  const openThreadInNewPane = useCallback(
+    (edge: PaneEdge) => dispatch({ _tag: "OpenThreadInNewPane", edge }),
+    [],
+  );
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme, appearanceMode, setAppearanceMode } = useTheme();
@@ -588,6 +597,8 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       onOpenCommandPalette((detail) => {
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
+        } else if (detail.open === "thread-in-new-pane") {
+          openThreadInNewPane(detail.paneEdge ?? "right");
         } else if (detail.open === "add-project") {
           openAddProject();
         } else if (detail.query !== undefined) {
@@ -600,7 +611,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen(true);
         }
       }),
-    [openAddProject, openNewThreadIn, setOpen],
+    [openAddProject, openNewThreadIn, openThreadInNewPane, setOpen],
   );
 
   return (
@@ -691,6 +702,26 @@ function OpenCommandPaletteDialog(props: {
   const [linkedThreadSearch, setLinkedThreadSearch] = useState(
     openIntent?.kind === "search" ? openIntent : null,
   );
+  // Fixed for this opening of the palette: picking a thread either navigates
+  // the route or opens a pane beside it, and switching mid-list would make the
+  // same row mean two different things.
+  const [paneEdge, setPaneEdge] = useState<PaneEdge | null>(
+    openIntent?.kind === "thread-in-new-pane" ? openIntent.edge : null,
+  );
+  const paneRouteTarget = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteTarget(params),
+  });
+  const { openInNewPane } = useChatPaneActions();
+  // Held in a ref so the thread list is not rebuilt every time a navigation
+  // gives `openInNewPane` a new identity.
+  const openThreadInNewPaneRef = useRef<((threadRef: ScopedThreadRef) => void) | null>(null);
+  useEffect(() => {
+    openThreadInNewPaneRef.current =
+      paneEdge === null
+        ? null
+        : (threadRef) => openInNewPane({ kind: "server", threadRef }, paneEdge);
+  }, [openInNewPane, paneEdge]);
   const deferredQuery = useDeferredValue(query);
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
@@ -1371,9 +1402,15 @@ function OpenCommandPaletteDialog(props: {
             : undefined;
         },
         runThread: async (thread) => {
+          const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+          const openBeside = openThreadInNewPaneRef.current;
+          if (openBeside) {
+            openBeside(threadRef);
+            return;
+          }
           await navigate({
             to: "/$environmentId/$threadId",
-            params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
+            params: buildThreadRouteParams(threadRef),
           });
         },
       }),
@@ -1773,6 +1810,36 @@ function OpenCommandPaletteDialog(props: {
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
+    });
+  }
+
+  // Panes only exist on the chat routes, and `openInNewPane` writes the chat
+  // route's search param, so this stays out of the palette everywhere else.
+  if (paneRouteTarget !== null) {
+    actionItems.push({
+      kind: "action",
+      value: "action:open-thread-in-new-pane",
+      searchTerms: ["split", "pane", "beside", "side by side", "right", "second thread"],
+      title: "Open thread in new pane...",
+      icon: <ColumnsIcon className={ITEM_ICON_CLASS} />,
+      // Picking the thread is the rest of this command, so the list stays up.
+      keepOpen: true,
+      run: async () => {
+        setPaneEdge("right");
+        setQuery("");
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:open-thread-in-pane-below",
+      searchTerms: ["split", "pane", "below", "under", "stacked", "horizontal", "second thread"],
+      title: "Open thread in pane below...",
+      icon: <RowsIcon className={ITEM_ICON_CLASS} />,
+      keepOpen: true,
+      run: async () => {
+        setPaneEdge("bottom");
+        setQuery("");
+      },
     });
   }
 

@@ -68,6 +68,8 @@ const FAVICON_CANDIDATES = [
   "assets/logo.svg",
   "assets/logo.png",
   ".idea/icon.svg",
+  // Root icon used by Sourcetree; kept last so framework favicons win.
+  "icon.png",
 ] as const;
 
 // Files that may contain a <link rel="icon"> or icon metadata declaration.

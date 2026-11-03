@@ -1,5 +1,7 @@
 import type { EnvironmentId, PullRequestLinkedThreadsResult } from "@t3tools/contracts";
 
+import type { PaneEdge } from "./panes/paneLayout";
+
 export interface CommandPaletteLinkedThreads {
   readonly environmentId: EnvironmentId;
   readonly threads: PullRequestLinkedThreadsResult["threads"];
@@ -10,7 +12,10 @@ export interface CommandPaletteLinkedThreads {
 const COMMAND_PALETTE_OPEN_EVENT = "t3code:open-command-palette";
 
 export interface CommandPaletteOpenDetail {
-  readonly open?: "add-project" | "new-thread-in";
+  /** `thread-in-new-pane` opens the thread list with picking bound to the pane grid. */
+  readonly open?: "add-project" | "new-thread-in" | "thread-in-new-pane";
+  /** Which side of the focused pane `thread-in-new-pane` splits on. Defaults to the right. */
+  readonly paneEdge?: PaneEdge;
   readonly query?: string;
   readonly linkedThreads?: CommandPaletteLinkedThreads;
 }

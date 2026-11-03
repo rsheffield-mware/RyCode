@@ -140,10 +140,10 @@ function HostedStaticOnboardingState() {
                 <LinkIcon className="size-5" />
               </div>
               <EmptyTitle className="text-foreground">
-                Connect to a computer running T3 Code
+                Connect to a computer running RyCode
               </EmptyTitle>
               <EmptyDescription className="mt-2 leading-relaxed text-muted-foreground/78">
-                This app connects to T3 Code running on your computer or a server. Start the T3 Code
+                This app connects to RyCode running on your computer or a server. Start the RyCode
                 desktop app or command-line server on that machine and keep it running.
               </EmptyDescription>
               <EmptyDescription className="mt-2 leading-relaxed text-muted-foreground/78">

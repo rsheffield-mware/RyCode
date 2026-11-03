@@ -1,5 +1,12 @@
 # Settings and project overrides
 
+On web and desktop, use **Project memory** in General settings to save decisions or preferences you want agents to
+use across threads. Choose a project first if the memory should apply only to that project.
+Edit or clear the text when it changes. T3 Code adds it to turns for every provider and does not
+save new memories automatically.
+On web and desktop, you can also select part of an agent response and choose **Remember** to add
+that passage to the current project's memory.
+
 On web and desktop, the Settings breadcrumb ends with the environment and project a change applies to. They start
 at **All environments** and **All projects** and stay selected as you move between categories or
 search for a setting.

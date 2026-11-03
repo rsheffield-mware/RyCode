@@ -1256,6 +1256,41 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.reply-suggestion.completed": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      // One suggestion per turn, and only while that turn is still the settled
+      // one the user is looking at. Rejecting keeps a superseded suggestion off
+      // the event log entirely rather than broadcasting a no-op update.
+      if (
+        thread.deletedAt !== null ||
+        thread.latestTurn?.turnId !== command.turnId ||
+        thread.latestTurn.state !== "completed" ||
+        thread.replySuggestion?.turnId === command.turnId
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `thread ${command.threadId} moved on before its reply suggestion arrived`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.reply-suggestion-completed",
+        payload: {
+          threadId: command.threadId,
+          turnId: command.turnId,
+          suggestion: command.suggestion,
+          generatedAt: occurredAt,
+          expectedLatestUserMessageAt: command.expectedLatestUserMessageAt,
+        },
+      };
+    }
+
     case "thread.title.refine": {
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
       const current =

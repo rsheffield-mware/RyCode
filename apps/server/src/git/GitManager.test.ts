@@ -309,6 +309,10 @@ function createTextGeneration(
       Effect.succeed({
         title: "Update workflow",
       }),
+    generateReplySuggestion: () =>
+      Effect.succeed({
+        suggestion: "",
+      }),
     ...overrides,
   };
 
@@ -352,6 +356,17 @@ function createTextGeneration(
           (cause) =>
             new TextGenerationError({
               operation: "generateThreadTitle",
+              detail: "fake text generation failed",
+              ...(cause !== undefined ? { cause } : {}),
+            }),
+        ),
+      ),
+    generateReplySuggestion: (input) =>
+      implementation.generateReplySuggestion(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation: "generateReplySuggestion",
               detail: "fake text generation failed",
               ...(cause !== undefined ? { cause } : {}),
             }),

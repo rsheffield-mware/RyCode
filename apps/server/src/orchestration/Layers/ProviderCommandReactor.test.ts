@@ -169,6 +169,9 @@ describe("ProviderCommandReactor", () => {
   async function createHarness(input?: {
     readonly baseDir?: string;
     readonly initialTitle?: string;
+    readonly replySuggestionsEnabled?: boolean;
+    readonly replySuggestionsEnabledForProject?: boolean;
+    readonly projectMemory?: string;
     readonly deferReactorStart?: boolean;
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
@@ -345,6 +348,9 @@ describe("ProviderCommandReactor", () => {
         }),
       ),
     );
+    const generateReplySuggestion = vi.fn<TextGeneration["Service"]["generateReplySuggestion"]>(
+      (_) => Effect.succeed({ suggestion: "Yes, retry on 429 only." }),
+    );
     const providerSnapshots = [
       {
         instanceId: modelSelection.instanceId,
@@ -488,9 +494,28 @@ describe("ProviderCommandReactor", () => {
         Layer.mock(TextGeneration, {
           generateBranchName,
           generateThreadTitle,
+          generateReplySuggestion,
         }),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(
+        ServerSettingsService.layerTest({
+          ...(input?.projectMemory
+            ? {
+                projectSettingsOverrides: {
+                  [asProjectId("project-1")]: { projectMemory: input.projectMemory },
+                },
+              }
+            : {}),
+          ...(input?.replySuggestionsEnabled === true ? { replySuggestionsEnabled: true } : {}),
+          ...(input?.replySuggestionsEnabledForProject === true
+            ? {
+                projectSettingsOverrides: {
+                  [asProjectId("project-1")]: { replySuggestionsEnabled: true },
+                },
+              }
+            : {}),
+        }),
+      ),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
@@ -599,6 +624,24 @@ describe("ProviderCommandReactor", () => {
       engine,
       snapshotQuery,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
+      // The suggestion never reaches the SQL projection: it is live state the
+      // clients apply from the event stream, so the event log is what to assert on.
+      readReplySuggestionEvents: () =>
+        runtime!
+          .runPromise(
+            Effect.gen(function* () {
+              const sql = yield* SqlClient.SqlClient;
+              return yield* sql<{ readonly payloadJson: string }>`
+              SELECT payload_json AS "payloadJson"
+              FROM orchestration_events
+              WHERE event_type = 'thread.reply-suggestion-completed'
+              ORDER BY sequence
+            `;
+            }),
+          )
+          .then((rows) =>
+            rows.map((row) => JSON.parse(row.payloadJson) as Record<string, unknown>),
+          ),
       readPendingTurnStarts: () =>
         runtime!.runPromise(
           Effect.gen(function* () {
@@ -624,6 +667,7 @@ describe("ProviderCommandReactor", () => {
       refreshStatus,
       generateBranchName,
       generateThreadTitle,
+      generateReplySuggestion,
       runtimeSessions,
       stateDir,
       drain,
@@ -931,6 +975,44 @@ describe("ProviderCommandReactor", () => {
       expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
         input: expect.stringContaining('<context kind="terminal" id="terminal-1">'),
       });
+    }),
+  );
+
+  effectIt.effect("sends project memory to the provider without changing thread history", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          projectMemory: "Use tabs for this project.",
+          startSessionEffect: (session) =>
+            Deferred.succeed(started, undefined).pipe(Effect.as(session)),
+        }),
+      );
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-with-memory"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-with-memory"),
+          role: "user",
+          text: "Fix the parser",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      yield* Deferred.await(started);
+      yield* Effect.promise(() => harness.drain());
+      expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+        input: expect.stringContaining("Use tabs for this project."),
+      });
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (candidate) => candidate.id === ThreadId.make("thread-1"),
+      );
+      expect(thread?.messages.find((message) => message.role === "user")?.text).toBe(
+        "Fix the parser",
+      );
     }),
   );
 
@@ -4339,6 +4421,191 @@ describe("ProviderCommandReactor", () => {
       expect(thread?.settledOverride).toBe("settled");
       expect(thread?.session?.status).toBe("stopped");
       expect(thread?.session?.providerInstanceId).toBe(ProviderInstanceId.make("codex_work"));
+    }),
+  );
+
+  const driveReplySuggestionTurn = (
+    harness: Awaited<ReturnType<typeof createHarness>>,
+    options: { readonly interruptBeforeReady?: boolean; readonly readyTwice?: boolean } = {},
+  ) =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread-1");
+      const turnId = asTurnId("reply-suggestion-turn");
+      const createdAt = "2026-01-01T00:00:01.000Z";
+      const setSession = (
+        commandId: string,
+        status: "running" | "interrupted" | "ready",
+        activeTurnId: TurnId | null,
+      ) =>
+        harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make(commandId),
+          threadId,
+          createdAt,
+          session: {
+            threadId,
+            status,
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId,
+            lastError: null,
+            updatedAt: createdAt,
+          },
+        });
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("reply-suggestion-turn-start"),
+        threadId,
+        message: {
+          messageId: MessageId.make("reply-suggestion-user"),
+          role: "user",
+          text: "Add a retry around the upload call.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt,
+      });
+      yield* Effect.promise(() => harness.drain());
+      yield* setSession("reply-suggestion-running", "running", turnId);
+      yield* harness.engine.dispatch({
+        type: "thread.message.assistant.delta",
+        commandId: CommandId.make("reply-suggestion-answer"),
+        threadId,
+        messageId: MessageId.make("reply-suggestion-assistant"),
+        turnId,
+        delta: "Done. Should I retry on 429 only?",
+        createdAt,
+      });
+      if (options.interruptBeforeReady === true) {
+        yield* setSession("reply-suggestion-interrupted", "interrupted", null);
+      }
+      yield* setSession("reply-suggestion-ready", "ready", null);
+      yield* Effect.promise(() => harness.drain());
+      if (options.readyTwice === true) {
+        yield* setSession("reply-suggestion-ready-again", "ready", null);
+        yield* Effect.promise(() => harness.drain());
+      }
+      return threadId;
+    });
+
+  effectIt.effect("spends no tokens on reply suggestions while the setting is off", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+
+      const threadId = yield* driveReplySuggestionTurn(harness);
+
+      expect(harness.generateReplySuggestion).not.toHaveBeenCalled();
+      expect(yield* Effect.promise(() => harness.readReplySuggestionEvents())).toEqual([]);
+      expect(threadId).toBe(ThreadId.make("thread-1"));
+    }),
+  );
+
+  effectIt.effect("suggests a next reply from the transcript once a turn completes", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness({ replySuggestionsEnabled: true }));
+
+      // The session going ready again (reconnect, restart) must not re-spend.
+      const threadId = yield* driveReplySuggestionTurn(harness, { readyTwice: true });
+
+      expect(harness.generateReplySuggestion).toHaveBeenCalledTimes(1);
+      const call = harness.generateReplySuggestion.mock.calls[0]?.[0];
+      expect(call?.cwd).toBe("/tmp/provider-project");
+      expect(call?.transcript).toContain("Add a retry around the upload call.");
+      expect(call?.transcript).toContain("Should I retry on 429 only?");
+      expect(yield* Effect.promise(() => harness.readReplySuggestionEvents())).toEqual([
+        {
+          threadId,
+          turnId: asTurnId("reply-suggestion-turn"),
+          suggestion: "Yes, retry on 429 only.",
+          generatedAt: expect.any(String),
+          expectedLatestUserMessageAt: expect.any(String),
+        },
+      ]);
+      // Persisted, so a reload or a second client sees the same suggestion.
+      const readModel = yield* Effect.promise(() => harness.readModel());
+      expect(
+        readModel.threads.find((entry) => entry.id === threadId)?.replySuggestion,
+      ).toMatchObject({
+        text: "Yes, retry on 429 only.",
+        turnId: asTurnId("reply-suggestion-turn"),
+      });
+    }),
+  );
+
+  effectIt.effect("skips the suggestion when the turn ended interrupted", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness({ replySuggestionsEnabled: true }));
+
+      yield* driveReplySuggestionTurn(harness, { interruptBeforeReady: true });
+
+      expect(harness.generateReplySuggestion).not.toHaveBeenCalled();
+    }),
+  );
+
+  effectIt.effect("drops an empty suggestion instead of recording it", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness({ replySuggestionsEnabled: true }));
+      harness.generateReplySuggestion.mockReturnValue(Effect.succeed({ suggestion: "" }));
+
+      const threadId = yield* driveReplySuggestionTurn(harness);
+
+      expect(harness.generateReplySuggestion).toHaveBeenCalledTimes(1);
+      expect(yield* Effect.promise(() => harness.readReplySuggestionEvents())).toEqual([]);
+      expect(threadId).toBe(ThreadId.make("thread-1"));
+    }),
+  );
+
+  effectIt.effect("honours a project override when the environment setting is off", () =>
+    Effect.gen(function* () {
+      // The web gate resolves the same way, so an environment-off/project-on
+      // thread must not generate suggestions no client would ever render.
+      const harness = yield* Effect.promise(() =>
+        createHarness({ replySuggestionsEnabledForProject: true }),
+      );
+
+      const threadId = yield* driveReplySuggestionTurn(harness);
+
+      expect(harness.generateReplySuggestion).toHaveBeenCalledTimes(1);
+      const readModel = yield* Effect.promise(() => harness.readModel());
+      expect(
+        readModel.threads.find((entry) => entry.id === threadId)?.replySuggestion,
+      ).toMatchObject({ text: "Yes, retry on 429 only." });
+    }),
+  );
+
+  effectIt.effect("drops a suggestion the user answered while it was generating", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness({ replySuggestionsEnabled: true }));
+      const threadId = ThreadId.make("thread-1");
+      // The user answers mid-generation: the turn has not changed, so only the
+      // newer user message tells the reactor the prediction is already stale.
+      harness.generateReplySuggestion.mockReturnValue(
+        Effect.gen(function* () {
+          yield* harness.engine.dispatch({
+            type: "thread.message.user.append",
+            commandId: CommandId.make("reply-suggestion-user-answered"),
+            threadId,
+            message: {
+              messageId: MessageId.make("reply-suggestion-answer"),
+              text: "Actually, drop the retry.",
+              attachments: [],
+            },
+            createdAt: "2026-01-01T00:00:09.000Z",
+          });
+          return { suggestion: "Yes, retry on 429 only." };
+        }).pipe(Effect.orDie),
+      );
+
+      yield* driveReplySuggestionTurn(harness);
+
+      expect(harness.generateReplySuggestion).toHaveBeenCalledTimes(1);
+      expect(yield* Effect.promise(() => harness.readReplySuggestionEvents())).toEqual([]);
+      const readModel = yield* Effect.promise(() => harness.readModel());
+      expect(
+        readModel.threads.find((entry) => entry.id === threadId)?.replySuggestion ?? null,
+      ).toBeNull();
     }),
   );
 });

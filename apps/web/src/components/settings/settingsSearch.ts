@@ -157,6 +157,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["name icon emoji image checkout remove delete"],
   },
   {
+    id: "project-memory",
+    title: "Project memory",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["agent notes decisions preferences across threads remember"],
+  },
+  {
     id: "default-model",
     title: "Default model",
     to: "/settings/general",
@@ -297,10 +304,25 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification sound alert completion input approval desktop"],
   },
   {
+    id: "notification-sound",
+    title: "Notification sound",
+    to: "/settings/general",
+    targetId: "thread-notifications",
+    searchTerms: ["custom notification sound upload audio file alert chime mp3 wav"],
+  },
+  {
     id: "in-app-notifications",
     title: "In-app notifications",
     to: "/settings/general",
     searchTerms: ["notification toast popup completion input approval failure"],
+  },
+  {
+    id: "dock-bounce",
+    title: "Bounce Dock icon",
+    to: "/settings/general",
+    searchTerms: ["dock bounce attention jump icon macos notification input approval"],
+    desktopOnly: true,
+    macOnly: true,
   },
   {
     id: "time-format",
@@ -453,6 +475,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: ["generated thread titles source control content default provider"],
+  },
+  {
+    id: "reply-suggestions",
+    title: "Suggested next reply",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["ghost text composer predict autocomplete tab accept follow up"],
   },
   {
     id: "diagnostics",

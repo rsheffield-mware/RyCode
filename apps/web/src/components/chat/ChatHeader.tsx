@@ -23,9 +23,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import GitActionsControl from "../GitActionsControl";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
-import { type DraftId } from "~/composerDraftStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import ProjectScriptsControl, {
@@ -33,6 +31,8 @@ import ProjectScriptsControl, {
   type ProjectScriptActionResult,
 } from "../ProjectScriptsControl";
 import { OpenInPicker } from "./OpenInPicker";
+import { NotificationBell } from "./NotificationBell";
+import { SourcetreeButton } from "./SourcetreeButton";
 import { useRemoteOpenState, type RemoteOpenMode } from "../../remoteOpen";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { useT3ProjectFileScripts } from "~/hooks/useT3ProjectFileScripts";
@@ -56,7 +56,6 @@ import { Menu, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
-  draftId?: DraftId;
   activeThreadTitle: string;
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
@@ -68,7 +67,7 @@ interface ChatHeaderProps {
   availableEditors: ReadonlyArray<EditorId>;
   rightPanelOpen: boolean;
   gitCwd: string | null;
-  readonly onOpenPullRequest?: ((number: number) => void) | undefined;
+  isGitRepo: boolean;
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onRunProjectScript: (script: ProjectScript) => void;
@@ -126,7 +125,6 @@ export function shouldShowOpenInPicker(input: {
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
   activeThreadId,
-  draftId,
   activeThreadTitle,
   isServerThread,
   activeProject,
@@ -137,7 +135,7 @@ export const ChatHeader = memo(function ChatHeader({
   availableEditors,
   rightPanelOpen,
   gitCwd,
-  onOpenPullRequest,
+  isGitRepo,
   onNewThreadInProject,
   onOpenProjectSettings,
   onRunProjectScript,
@@ -208,6 +206,13 @@ export const ChatHeader = memo(function ChatHeader({
     primaryEnvironmentId,
     remoteOpenMode: remoteOpenState.mode,
   });
+  // Sourcetree launches through the server's shell, so it only makes sense
+  // when that shell runs on the machine the user is looking at.
+  const showSourcetree =
+    isGitRepo &&
+    gitCwd !== null &&
+    remoteOpenState.mode === "local-exec" &&
+    availableEditors.includes("sourcetree");
   const activeThreadRef = useMemo(
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
@@ -381,15 +386,13 @@ export const ChatHeader = memo(function ChatHeader({
           />
         </>
       )}
-      {activeProjectName && gitCwd && (
+      {showSourcetree && gitCwd && (
         <>
           {actionsCollapsed && (activeProjectScripts || showOpenInPicker) && <MenuSeparator />}
-          <GitActionsControl
+          <SourcetreeButton
             presentation={actionsCollapsed ? "menu" : "toolbar"}
-            gitCwd={gitCwd}
-            activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
-            onOpenPullRequest={onOpenPullRequest}
-            {...(draftId ? { draftId } : {})}
+            environmentId={activeThreadEnvironmentId}
+            cwd={gitCwd}
           />
         </>
       )}
@@ -498,11 +501,11 @@ export const ChatHeader = memo(function ChatHeader({
           "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
+        <NotificationBell />
         <Menu open={actionsCollapsed && actionsOpen} onOpenChange={setActionsOpen}>
           <MenuTrigger
             className={
-              actionsCollapsed &&
-              (activeProjectScripts || showOpenInPicker || (activeProjectName && gitCwd))
+              actionsCollapsed && (activeProjectScripts || showOpenInPicker || showSourcetree)
                 ? undefined
                 : "hidden"
             }

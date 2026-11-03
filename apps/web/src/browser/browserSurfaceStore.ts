@@ -1,5 +1,8 @@
 import { create } from "zustand";
 
+import { notifyBrowserSurfaceLayoutChanged } from "./browserSurfaceLayout";
+import { browserSurfaceOwnerYields } from "./browserSurfaceRect";
+
 export interface BrowserSurfaceRect {
   readonly x: number;
   readonly y: number;
@@ -37,6 +40,7 @@ interface BrowserSurfaceStoreState {
   readonly present: (
     tabId: string,
     owner: symbol,
+    fitSourceContent: boolean,
     rect: BrowserSurfaceRect,
     visible: boolean,
     cornerRadius: number,
@@ -98,6 +102,11 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
     set((state) => {
       const current = state.byTabId[tabId];
       if (current?.owner === owner) return state;
+      // Mounting takes a free or idle surface. A slot that arrives while
+      // another one is showing the guest waits, and wins it through `present`,
+      // which arbitrates on what the two slots ask to show rather than on
+      // which of them mounted or measured first.
+      if (current && current.owner !== null && current.visible) return state;
       return {
         byTabId: {
           ...state.byTabId,
@@ -115,12 +124,23 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
         },
       };
     }),
-  present: (tabId, owner, rect, visible, cornerRadius, zIndex) =>
+  present: (tabId, owner, fitSourceContent, rect, visible, cornerRadius, zIndex) =>
     set((state) => {
       const current = state.byTabId[tabId];
-      if (current?.owner !== owner) return state;
+      if (!current) return state;
+      const takingOver = current.owner !== owner;
       if (
-        current &&
+        takingOver &&
+        current.owner !== null &&
+        !browserSurfaceOwnerYields({
+          owner: { visible: current.visible, zIndex: current.zIndex },
+          challenger: { visible, zIndex },
+        })
+      ) {
+        return state;
+      }
+      if (
+        !takingOver &&
         current.visible === visible &&
         current.cornerRadius === cornerRadius &&
         current.zIndex === zIndex &&
@@ -131,7 +151,21 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
       return {
         byTabId: {
           ...state.byTabId,
-          [tabId]: { ...current, rect, visible, cornerRadius, zIndex, updatedAt: Date.now() },
+          [tabId]: {
+            ...current,
+            rect,
+            visible,
+            cornerRadius,
+            zIndex,
+            updatedAt: Date.now(),
+            ...(takingOver
+              ? {
+                  owner,
+                  fitSourceContent,
+                  fittedSourceContent: fitSourceContent ? current.content : null,
+                }
+              : {}),
+          },
         },
       };
     }),
@@ -215,17 +249,32 @@ export function acquireBrowserSurface(
   let released = false;
   useBrowserSurfaceStore.getState().claim(tabId, owner, fitSourceContent);
 
+  const isOwner = () =>
+    !released && useBrowserSurfaceStore.getState().byTabId[tabId]?.owner === owner;
+
   return {
     present: (rect, visible, cornerRadius = 0, zIndex = 30) => {
       if (released) return false;
-      if (useBrowserSurfaceStore.getState().byTabId[tabId]?.owner !== owner) return false;
-      useBrowserSurfaceStore.getState().present(tabId, owner, rect, visible, cornerRadius, zIndex);
+      const before = useBrowserSurfaceStore.getState().byTabId[tabId];
+      useBrowserSurfaceStore
+        .getState()
+        .present(tabId, owner, fitSourceContent, rect, visible, cornerRadius, zIndex);
+      if (!isOwner()) return false;
+      // A slot that stops showing the guest, or that has just taken it from
+      // another slot, leaves the loser measuring a surface it no longer owns.
+      // Nudge every slot rather than leave one waiting for its own observer to
+      // happen to fire.
+      if ((before?.visible === true && !visible) || before?.owner !== owner) {
+        notifyBrowserSurfaceLayoutChanged();
+      }
       return true;
     },
     release: () => {
       if (released) return;
+      const wasOwner = isOwner();
       released = true;
       useBrowserSurfaceStore.getState().release(tabId, owner);
+      if (wasOwner) notifyBrowserSurfaceLayoutChanged();
     },
   };
 }

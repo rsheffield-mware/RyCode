@@ -15,11 +15,13 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildReplySuggestionPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
+  sanitizeReplySuggestion,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 import {
@@ -54,7 +56,8 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateReplySuggestion";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -261,10 +264,28 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  const generateReplySuggestion: TextGeneration.TextGeneration["Service"]["generateReplySuggestion"] =
+    Effect.fn("CursorTextGeneration.generateReplySuggestion")(function* (input) {
+      const { prompt, outputSchema } = buildReplySuggestionPrompt({
+        transcript: input.transcript,
+      });
+
+      const generated = yield* runCursorJson({
+        operation: "generateReplySuggestion",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return { suggestion: sanitizeReplySuggestion(generated.suggestion) };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateReplySuggestion,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

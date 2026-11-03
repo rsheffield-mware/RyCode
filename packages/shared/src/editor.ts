@@ -15,6 +15,7 @@ const installNames: Partial<Record<Editor["id"], ReadonlyArray<string>>> = {
   idea: ["IntelliJ IDEA", "IntelliJ IDEA CE", "IntelliJ IDEA Ultimate"],
   pycharm: ["PyCharm", "PyCharm CE"],
   rider: ["Rider", "JetBrains Rider"],
+  sourcetree: ["Sourcetree", "SourceTree"],
 };
 
 export const resolveEditorCommand = Effect.fn("editor.resolveEditorCommand")(function* (
@@ -42,12 +43,14 @@ export const resolveEditorCommand = Effect.fn("editor.resolveEditorCommand")(fun
       for (const name of names) {
         const contents = path.join(root, `${name}.app`, "Contents");
         candidates.push(
-          ...(jetbrains || editor.id === "zed"
-            ? [path.join(contents, "MacOS", editor.id === "zed" ? "cli" : command)]
-            : [
-                path.join(contents, "Resources/app/bin", command),
-                path.join(contents, "Resources/app/bin/code"),
-              ]),
+          ...(editor.id === "sourcetree"
+            ? [path.join(contents, "Resources", command)]
+            : jetbrains || editor.id === "zed"
+              ? [path.join(contents, "MacOS", editor.id === "zed" ? "cli" : command)]
+              : [
+                  path.join(contents, "Resources/app/bin", command),
+                  path.join(contents, "Resources/app/bin/code"),
+                ]),
         );
       }
     }

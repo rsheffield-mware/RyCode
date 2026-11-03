@@ -294,6 +294,9 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
   inAppNotificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Only the macOS desktop app acts on this, and only while desktop
+  // notifications are on, so defaulting it true stays quiet until opted in.
+  dockBounceEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   diffColorScheme: DiffColorScheme.pipe(
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
   ),
@@ -849,7 +852,7 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "Server URL",
-        description: "Leave blank to let T3 Code spawn the server when needed.",
+        description: "Leave blank to let RyCode spawn the server when needed.",
         providerSettingsForm: {
           placeholder: "http://127.0.0.1:4096",
           clearWhenEmpty: "omit",
@@ -1008,6 +1011,8 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "enableAgentBrowserAccess",
   "enableAgentDeviceAccess",
   "textGenerationModelSelection",
+  "replySuggestionsEnabled",
+  "projectMemory",
   "sourceControlWriterModelSelection",
   "sourceControlWritingStyle",
   "pullRequestMergeMethod",
@@ -1017,6 +1022,8 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "responseStreamingMode",
 ] as const;
 export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTING_KEYS)[number];
+
+const ProjectMemory = Schema.String.check(Schema.isMaxLength(4_000));
 
 /**
  * One project's overrides. An absent key inherits the environment value;
@@ -1035,6 +1042,8 @@ export const ProjectSettingsOverrides = Schema.Struct({
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
+  replySuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
+  projectMemory: Schema.optionalKey(ProjectMemory),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSettings),
   pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
@@ -1234,6 +1243,12 @@ export const ServerSettings = Schema.Struct({
       }),
     ),
   ),
+  /**
+   * Off by default: each finished turn otherwise spends a short text
+   * generation call on a suggestion the user may never look at.
+   */
+  replySuggestionsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  projectMemory: ProjectMemory.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   sourceControlWritingStyle: SourceControlWritingStyleSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1513,6 +1528,8 @@ export const ServerSettingsPatch = Schema.Struct({
   worktreeSubmodules: Schema.optionalKey(Schema.NullOr(WorktreeSubmodules)),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
+  replySuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
+  projectMemory: Schema.optionalKey(ProjectMemory),
   sourceControlWritingStyle: Schema.optionalKey(
     Schema.Struct({
       mode: Schema.optionalKey(SourceControlWritingStyleMode),
@@ -1560,6 +1577,7 @@ export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 export const ClientSettingsPatch = Schema.Struct({
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
+  dockBounceEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
   loadBalancingEnabled: Schema.optionalKey(Schema.Boolean),
   loadBalancingWeights: Schema.optionalKey(LoadBalancingWeights),

@@ -59,7 +59,7 @@ describe("applyThreadDetailEvent", () => {
         type: "project.created",
         payload: {
           projectId: ProjectId.make("project-1"),
-          title: "T3 Code",
+          title: "RyCode",
           workspaceRoot: "/repo",
           repositoryIdentity: null,
           defaultModelSelection: null,
@@ -1666,6 +1666,135 @@ describe("applyThreadDetailEvent", () => {
         },
       } as any);
       expect(result.kind).toBe("unchanged");
+    });
+  });
+
+  describe("reply suggestions", () => {
+    const settledThread: OrchestrationThread = {
+      ...baseThread,
+      latestTurn: {
+        turnId: TurnId.make("turn-1"),
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:00.000Z",
+        completedAt: "2026-04-01T00:01:00.000Z",
+        assistantMessageId: null,
+      },
+      replySuggestion: {
+        text: "Yes, retry on 429 only.",
+        turnId: TurnId.make("turn-1"),
+        generatedAt: "2026-04-01T00:01:05.000Z",
+      },
+    };
+
+    it("records a suggestion for the latest turn without bumping updatedAt", () => {
+      const result = applyThreadDetailEvent(
+        { ...settledThread, replySuggestion: null },
+        {
+          ...baseEventFields,
+          sequence: 2,
+          occurredAt: "2026-04-01T00:01:05.000Z",
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-1"),
+          type: "thread.reply-suggestion-completed",
+          payload: {
+            threadId: ThreadId.make("thread-1"),
+            turnId: TurnId.make("turn-1"),
+            suggestion: "Yes, retry on 429 only.",
+            generatedAt: "2026-04-01T00:01:05.000Z",
+            expectedLatestUserMessageAt: null,
+          },
+        },
+      );
+
+      expect(result.kind).toBe("updated");
+      if (result.kind !== "updated") return;
+      expect(result.thread.replySuggestion?.text).toBe("Yes, retry on 429 only.");
+      expect(result.thread.updatedAt).toBe(baseThread.updatedAt);
+    });
+
+    it("ignores a suggestion for a turn that is no longer the latest", () => {
+      const result = applyThreadDetailEvent(settledThread, {
+        ...baseEventFields,
+        sequence: 2,
+        occurredAt: "2026-04-01T00:01:05.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.reply-suggestion-completed",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          turnId: TurnId.make("turn-0"),
+          suggestion: "Stale.",
+          generatedAt: "2026-04-01T00:01:05.000Z",
+          expectedLatestUserMessageAt: null,
+        },
+      });
+
+      expect(result.kind).toBe("unchanged");
+    });
+
+    it("ignores a suggestion the user already answered", () => {
+      const answered: OrchestrationThread = {
+        ...settledThread,
+        replySuggestion: null,
+        messages: [
+          {
+            id: MessageId.make("user-answer"),
+            role: "user",
+            text: "Actually, drop the retry.",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-04-01T00:01:02.000Z",
+            updatedAt: "2026-04-01T00:01:02.000Z",
+          },
+        ],
+      };
+
+      const result = applyThreadDetailEvent(answered, {
+        ...baseEventFields,
+        sequence: 2,
+        occurredAt: "2026-04-01T00:01:05.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.reply-suggestion-completed",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          turnId: TurnId.make("turn-1"),
+          suggestion: "Yes, retry on 429 only.",
+          generatedAt: "2026-04-01T00:01:05.000Z",
+          // The server sampled an empty thread before generating.
+          expectedLatestUserMessageAt: null,
+        },
+      });
+
+      expect(result.kind).toBe("unchanged");
+    });
+
+    it("drops a stale suggestion once the next turn starts", () => {
+      const result = applyThreadDetailEvent(settledThread, {
+        ...baseEventFields,
+        sequence: 3,
+        occurredAt: "2026-04-01T00:02:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.session-set",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          session: {
+            threadId: ThreadId.make("thread-1"),
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: TurnId.make("turn-2"),
+            lastError: null,
+            updatedAt: "2026-04-01T00:02:00.000Z",
+          },
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind !== "updated") return;
+      expect(result.thread.replySuggestion).toBeNull();
     });
   });
 });

@@ -239,7 +239,7 @@ export function DraftHeroHeadline({
   // in the h1; without an explicit label its widget state bleeds into the
   // announced phrase.
   const headingLabel = hasResolvedProject
-    ? `What should we build in ${activeProjectDisplayName}?`
+    ? "What should we build?"
     : canChooseProject
       ? `${activeProjectDisplayName ?? "Choose a project"} to start`
       : "Add a project to start";
@@ -250,7 +250,7 @@ export function DraftHeroHeadline({
       className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl"
     >
       {hasResolvedProject ? (
-        <>What should we build in {projectSelector}?</>
+        <>What should we build?</>
       ) : canChooseProject ? (
         <>{projectSelector} to start</>
       ) : (

@@ -219,7 +219,7 @@ export interface ThreadTitlePromptInput {
 
 // Keep shared editorial rules in these two prompts in sync. Regeneration
 // intentionally adds guidance for thread history and the previous title.
-const INITIAL_THREAD_TITLE_PROMPT = `Generate a title that will help the user recognize this T3 Code thread weeks later.
+const INITIAL_THREAD_TITLE_PROMPT = `Generate a title that will help the user recognize this RyCode thread weeks later.
 Return JSON with keys title and needsRefinement.
 Set needsRefinement to true only if the subject is still unknown, such as an unresolved link, "fix this", or an unexplained attachment. Otherwise set it to false.
 
@@ -247,7 +247,7 @@ Editorial rules:
 - If a linked PR or issue cannot be read, fall back to the user's stated action plus its number, such as "Take Over PR 8588". This is the one case where a PR or issue number belongs in the title.`;
 
 function regenerateThreadTitlePrompt(previousTitle: string): string {
-  return `Regenerate the title for an existing T3 Code thread so the user can recognize it weeks later.
+  return `Regenerate the title for an existing RyCode thread so the user can recognize it weeks later.
 The previous title was ${JSON.stringify(previousTitle)}.
 Return JSON with keys title and needsRefinement. Set needsRefinement to false.
 
@@ -323,6 +323,43 @@ export function buildThreadTitlePrompt(input: ThreadTitlePromptInput) {
   const outputSchema = Schema.Struct({
     title: Schema.String,
     needsRefinement: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  });
+
+  return { prompt, outputSchema };
+}
+
+// ---------------------------------------------------------------------------
+// Reply suggestion
+// ---------------------------------------------------------------------------
+
+export interface ReplySuggestionPromptInput {
+  /** Formatted thread transcript, most recent turn last. */
+  transcript: string;
+}
+
+const REPLY_SUGGESTION_PROMPT = `Predict the next message the USER would send to the coding agent in this thread.
+Return JSON with key suggestion.
+
+Write in the user's own first-person voice, as an instruction or reply addressed to the agent.
+Never write as the agent, and never describe what the agent should do in the third person.
+
+Rules:
+- At most 2 sentences.
+- Plain text only: no markdown, no surrounding quotes, no preamble, no labels.
+- If the agent's last turn asked the user a direct question, shape the suggestion as an answer to that question.
+- Continue the thread's actual work. Do not invent files, tools, or facts the thread never mentioned.
+- Return an empty string when there is no sensible next message: the work is clearly finished, or the agent is waiting on an approval rather than on a reply.`;
+
+export function buildReplySuggestionPrompt(input: ReplySuggestionPromptInput) {
+  const prompt = [
+    REPLY_SUGGESTION_PROMPT,
+    "",
+    "Thread contents:",
+    limitSection(input.transcript, 8_000),
+  ].join("\n");
+
+  const outputSchema = Schema.Struct({
+    suggestion: Schema.String,
   });
 
   return { prompt, outputSchema };

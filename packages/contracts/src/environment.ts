@@ -77,7 +77,7 @@ export type ServerSelfUpdateMethod = typeof ServerSelfUpdateMethod.Type;
 
 /** What update path a client should offer for a server: one of the RPC
     self-update methods above, or "desktop-managed" when the backend's
-    version belongs to the T3 Code desktop app supervising it — updating the
+    version belongs to the RyCode desktop app supervising it — updating the
     app on that machine is the only way to update the server. */
 export const ServerSelfUpdateCapability = Schema.Literals([
   "boot-service",
@@ -144,6 +144,13 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands regenerateTitle on thread.meta.update. Absent on
       older servers, so clients hide the action instead of sending it. */
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
+  /** Server generates a suggested next reply after a turn and emits
+      thread.reply-suggestion-completed. Absent on older servers, so clients
+      never render the ghost text instead of waiting on an event that
+      cannot arrive. */
+  replySuggestions: Schema.optionalKey(Schema.Boolean),
+  /** Server can persist and inject explicitly saved project memory. */
+  projectMemory: Schema.optionalKey(Schema.Boolean),
   /** Server supports legacy linkedPullRequest updates through thread.meta.update.
       Independent of threadPullRequests; servers supporting both advertise both. */
   threadPullRequestLinking: Schema.optionalKey(Schema.Boolean),

@@ -52,6 +52,7 @@ import {
   ThreadUnsnoozedPayload,
   ThreadRevertedPayload,
   ThreadSessionSetPayload,
+  ThreadReplySuggestionCompletedPayload,
   ThreadTurnDiffCompletedPayload,
 } from "./Schemas.ts";
 
@@ -804,6 +805,9 @@ export function projectEvent(
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             messages: cappedMessages,
+            // The user has moved on; a suggestion for the previous turn is stale
+            // whether or not the turn has started yet.
+            ...(payload.role === "user" ? { replySuggestion: null } : {}),
             updatedAt: event.occurredAt,
           }),
         };
@@ -832,10 +836,17 @@ export function projectEvent(
         // Leaving the "running" session status is the turn-end signal: settle
         // a still-running latest turn so its duration reflects the whole turn.
         const settledTurnState = settledTurnStateForSessionStatus(session.status);
+        const startsNewTurn =
+          session.status === "running" &&
+          session.activeTurnId !== null &&
+          session.activeTurnId !== thread.latestTurn?.turnId;
         return {
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             session,
+            // A suggestion belongs to the turn that produced it; a new turn
+            // must never inherit the previous turn's ghost text.
+            ...(startsNewTurn ? { replySuggestion: null } : {}),
             latestTurn:
               session.status === "running" && session.activeTurnId !== null
                 ? {
@@ -1032,6 +1043,27 @@ export function projectEvent(
             }),
           };
         }),
+      );
+
+    case "thread.reply-suggestion-completed":
+      return decodeForEvent(
+        ThreadReplySuggestionCompletedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          // updatedAt is deliberately untouched: a suggestion is not thread
+          // activity and must not reorder the sidebar.
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            replySuggestion: {
+              text: payload.suggestion,
+              turnId: payload.turnId,
+              generatedAt: payload.generatedAt,
+            },
+          }),
+        })),
       );
 
     case "thread.activity-appended":

@@ -68,7 +68,7 @@ const checkForUpdatesFromMenu = Effect.gen(function* () {
     yield* electronDialog.showMessageBox({
       type: "info",
       title: "You're up to date!",
-      message: `T3 Code ${updateState.currentVersion} is currently the newest version available.`,
+      message: `RyCode ${updateState.currentVersion} is currently the newest version available.`,
       buttons: ["OK"],
     });
   } else if (updateState.status === "error") {
@@ -152,6 +152,13 @@ export const make = Effect.gen(function* () {
     };
     const zoomClick = (direction: DesktopWindow.MainWindowZoomDirection) => () => {
       runMenuEffect(`zoom-${direction}`, zoomMainWindow(direction));
+    };
+    // Which pane an action lands in is the renderer's to decide: the main
+    // process knows neither how many panes are open nor which one the user is
+    // working in, and a focused guest page makes the window's own idea of
+    // focus useless for answering that.
+    const paneClick = (action: "split-right" | "split-down" | "close-pane") => () => {
+      runMenuEffect(action, dispatchMenuAction(action));
     };
     const template: Electron.MenuItemConstructorOptions[] = [];
 
@@ -249,6 +256,25 @@ export const make = Effect.gen(function* () {
             click: zoomClick("in"),
           },
           { label: "Zoom Out", accelerator: "CmdOrCtrl+-", click: zoomClick("out") },
+          { type: "separator" },
+          /*
+            The chords deliberately avoid CmdOrCtrl+W: that is already the
+            native `close` role here and the app's own terminal/right-panel
+            close binding, so a third meaning would make it unpredictable.
+            The backslash family is unclaimed by both the menu roles and the
+            default keybindings.
+          */
+          { label: "Split Right...", accelerator: "CmdOrCtrl+\\", click: paneClick("split-right") },
+          {
+            label: "Split Down...",
+            accelerator: "CmdOrCtrl+Alt+\\",
+            click: paneClick("split-down"),
+          },
+          {
+            label: "Close Pane",
+            accelerator: "CmdOrCtrl+Shift+\\",
+            click: paneClick("close-pane"),
+          },
           { type: "separator" },
           { role: "togglefullscreen" },
         ],

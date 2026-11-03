@@ -80,6 +80,31 @@ export function sanitizeThreadTitle(raw: string): string {
   return `${normalized.slice(0, MAX_THREAD_TITLE_CHARS - 3).trimEnd()}...`;
 }
 
+// Prompts ask for at most two sentences. This cap only stops a runaway model
+// from pushing an essay into the composer's ghost text.
+const MAX_REPLY_SUGGESTION_CHARS = 500;
+
+/**
+ * Normalise a raw reply suggestion to a single plain-text line.
+ * Returns "" when nothing usable is left, which callers treat as "no suggestion".
+ */
+export function sanitizeReplySuggestion(raw: string): string {
+  const collapsed = raw.trim().replace(/\s+/g, " ");
+  // Strip once from each end: a model that wraps its answer in quotes does it
+  // symmetrically, and stripping repeatedly would eat a real leading apostrophe.
+  const unquoted = collapsed
+    .replace(/^['"`\u201c\u2018]/, "")
+    .replace(/['"`\u201d\u2019]$/, "")
+    .trim();
+  if (unquoted.length === 0) {
+    return "";
+  }
+  if (unquoted.length <= MAX_REPLY_SUGGESTION_CHARS) {
+    return unquoted;
+  }
+  return `${unquoted.slice(0, MAX_REPLY_SUGGESTION_CHARS - 3).trimEnd()}...`;
+}
+
 /** CLI name to human-readable label, e.g. "codex" → "Codex CLI (`codex`)" */
 function cliLabel(cliName: string): string {
   const capitalized = cliName.charAt(0).toUpperCase() + cliName.slice(1);

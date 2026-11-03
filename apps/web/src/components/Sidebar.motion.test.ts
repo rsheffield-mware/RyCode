@@ -34,7 +34,7 @@ class TestRow {
   animations: TestAnimation[] = [];
   constructor(
     readonly name: string,
-    public offsetHeight = 82,
+    public offsetHeight = 58,
   ) {}
   getBoundingClientRect() {
     return { top: this.offsetTop + this.dragTranslate, height: this.offsetHeight };
@@ -121,10 +121,10 @@ describe("sidebar list motion", () => {
     a.offsetHeight = 36;
     layout([pinnedHeader, pinned, divider, b, settledHeader, settled, a]);
     motion.update(true);
-    expectMove(a, -153);
-    expectMove(b, 83);
-    expectMove(settledHeader, 83);
-    expectMove(settled, 83);
+    expectMove(a, -129);
+    expectMove(b, 59);
+    expectMove(settledHeader, 59);
+    expectMove(settled, 59);
     expect(pinned.animate).not.toHaveBeenCalled();
     expect(divider.animate).not.toHaveBeenCalled();
   });
@@ -135,7 +135,7 @@ describe("sidebar list motion", () => {
     motion.update(true);
     motion.suspend();
     a.dragTranslate = 300;
-    b.dragTranslate = -83;
+    b.dragTranslate = -59;
     motion.update(false);
     motion.suspend();
     layout([b, a, c]);
@@ -145,9 +145,9 @@ describe("sidebar list motion", () => {
 
     layout([c, b, a]);
     motion.update(true);
-    expectMove(c, 166);
-    expectMove(b, -83);
-    expectMove(a, -83);
+    expectMove(c, 118);
+    expectMove(b, -59);
+    expectMove(a, -59);
   });
 
   it("glides every row from its released position into its committed slot", () => {
@@ -158,15 +158,15 @@ describe("sidebar list motion", () => {
     // a is lifted 130px below its slot; b previews upward into a's place
     // and c holds a 16px label gap open below the divider.
     a.dragTranslate = 130;
-    b.dragTranslate = -83;
+    b.dragTranslate = -59;
     c.dragTranslate = 16;
     motion.update(false);
     motion.release();
     layout([b, a, c]);
     a.dragTranslate = b.dragTranslate = c.dragTranslate = 0;
     motion.update(true);
-    // Lifted top 138, committed slot top 91: glide the remaining 47px.
-    expectMove(a, 47);
+    // Lifted top 138, committed slot top 67: glide the remaining 71px.
+    expectMove(a, 71);
     // b already sits where it lands; c closes its 16px gap.
     expect(b.animations).toHaveLength(0);
     expectMove(c, 16);
@@ -193,7 +193,7 @@ describe("sidebar list motion", () => {
     motion.update(true);
     motion.suspend();
     a.dragTranslate = 500;
-    b.dragTranslate = -83;
+    b.dragTranslate = -59;
     motion.update(false);
     motion.suspend();
     a.dragTranslate = b.dragTranslate = 0;
@@ -203,8 +203,8 @@ describe("sidebar list motion", () => {
 
     layout([b, a]);
     motion.update(true);
-    expectMove(a, -83);
-    expectMove(b, 83);
+    expectMove(a, -59);
+    expectMove(b, 59);
   });
 
   it("retargets rapid changes from the current visual position", () => {
@@ -283,7 +283,7 @@ describe("sidebar list motion", () => {
     expect(a.animations[0]!.cancel).toHaveBeenCalledOnce();
     expect(fresh.animate).toHaveBeenLastCalledWith(
       [
-        { opacity: 0, transform: "translateY(83px)" },
+        { opacity: 0, transform: "translateY(59px)" },
         { opacity: 1, transform: "translateY(0px)" },
       ],
       {
@@ -294,10 +294,10 @@ describe("sidebar list motion", () => {
     const clone = a.clones[0]!;
     expect(clone.style).toMatchObject({
       position: "absolute",
-      top: "49.5px",
+      top: "37.5px",
       left: "4px",
       width: "260px",
-      height: "82px",
+      height: "58px",
       transform: "none",
       pointerEvents: "none",
     });
@@ -308,7 +308,7 @@ describe("sidebar list motion", () => {
     expect(clone.animate).toHaveBeenCalledWith(
       [
         { opacity: 1, transform: "translateY(0px)" },
-        { opacity: 0, transform: "translateY(-83px)" },
+        { opacity: 0, transform: "translateY(-59px)" },
       ],
       {
         duration: 150,
@@ -538,7 +538,7 @@ describe("sidebar list motion", () => {
     media.matches = false;
     layout([a, b]);
     motion.update(true);
-    expectMove(a, 83);
-    expectMove(b, -83);
+    expectMove(a, 59);
+    expectMove(b, -59);
   });
 });

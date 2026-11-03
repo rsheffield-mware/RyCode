@@ -95,7 +95,8 @@ export function RemoteHandoffCard(props: { machine: string; latencyMs: number })
 const PROJECT_FAVICONS = {
   t3code: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <rect width="128" height="128" rx="10" fill="#000"/>
-  <path d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z" fill="#fff"/>
+  <path d="M35.07 47.10V35.83H44.70Q47.73 35.83 49.24 37.15Q50.75 38.47 50.75 41.38Q50.75 44.41 49.24 45.75Q47.73 47.10 44.70 47.10ZM26.27 29.00V69.00H35.07V53.37H43.86Q47.17 53.37 48.63 54.83Q50.08 56.28 50.53 59.42Q50.87 61.83 51.04 64.46Q51.20 67.10 51.93 69.00H60.73Q60.11 68.16 59.80 66.96Q59.49 65.75 59.35 64.41Q59.21 63.06 59.16 61.77Q59.10 60.48 59.05 59.53Q58.93 58.02 58.63 56.51Q58.32 54.99 57.65 53.73Q56.97 52.47 55.91 51.55Q54.84 50.62 53.22 50.18V50.06Q56.58 48.72 58.07 46.14Q59.55 43.57 59.55 40.04Q59.55 37.74 58.74 35.75Q57.93 33.76 56.39 32.25Q54.84 30.74 52.69 29.87Q50.53 29.00 47.84 29.00ZM78.09 53.43V69.00H86.88V53.65L101.73 29.00H91.92L82.62 44.80L73.27 29.00H63.41Z" fill="#fff"/>
+  <path d="M37.40 85.39H41.44Q41.26 83.74 40.54 82.46Q39.82 81.18 38.71 80.32Q37.61 79.45 36.21 79.00Q34.82 78.55 33.25 78.55Q31.06 78.55 29.32 79.32Q27.58 80.09 26.38 81.45Q25.18 82.81 24.54 84.63Q23.91 86.45 23.91 88.58Q23.91 90.66 24.54 92.45Q25.18 94.25 26.38 95.58Q27.58 96.91 29.32 97.67Q31.06 98.43 33.25 98.43Q35.00 98.43 36.47 97.89Q37.93 97.36 39.02 96.35Q40.11 95.34 40.78 93.90Q41.44 92.46 41.60 90.68H37.56Q37.32 92.60 36.24 93.77Q35.16 94.94 33.25 94.94Q31.84 94.94 30.85 94.39Q29.87 93.85 29.25 92.94Q28.64 92.04 28.36 90.91Q28.08 89.78 28.08 88.58Q28.08 87.33 28.36 86.16Q28.64 84.99 29.25 84.07Q29.87 83.15 30.85 82.61Q31.84 82.06 33.25 82.06Q34.02 82.06 34.72 82.31Q35.43 82.57 35.99 83.02Q36.55 83.47 36.92 84.07Q37.29 84.67 37.40 85.39ZM49.40 88.58Q49.40 87.33 49.68 86.16Q49.96 84.99 50.57 84.07Q51.19 83.15 52.17 82.61Q53.15 82.06 54.56 82.06Q55.98 82.06 56.96 82.61Q57.94 83.15 58.56 84.07Q59.17 84.99 59.45 86.16Q59.73 87.33 59.73 88.58Q59.73 89.78 59.45 90.91Q59.17 92.04 58.56 92.94Q57.94 93.85 56.96 94.39Q55.98 94.94 54.56 94.94Q53.15 94.94 52.17 94.39Q51.19 93.85 50.57 92.94Q49.96 92.04 49.68 90.91Q49.40 89.78 49.40 88.58ZM45.22 88.58Q45.22 90.66 45.86 92.45Q46.50 94.25 47.70 95.58Q48.90 96.91 50.64 97.67Q52.38 98.43 54.56 98.43Q56.77 98.43 58.50 97.67Q60.23 96.91 61.43 95.58Q62.63 94.25 63.27 92.45Q63.91 90.66 63.91 88.58Q63.91 86.45 63.27 84.63Q62.63 82.81 61.43 81.45Q60.23 80.09 58.50 79.32Q56.77 78.55 54.56 78.55Q52.38 78.55 50.64 79.32Q48.90 80.09 47.70 81.45Q46.50 82.81 45.86 84.63Q45.22 86.45 45.22 88.58ZM72.53 94.49V82.51H75.51Q77.05 82.51 78.11 82.95Q79.16 83.39 79.80 84.22Q80.43 85.04 80.71 86.20Q80.99 87.36 80.99 88.79Q80.99 90.36 80.59 91.45Q80.19 92.54 79.53 93.22Q78.86 93.90 78.01 94.19Q77.16 94.49 76.26 94.49ZM68.35 79.00V98.00H76.55Q78.73 98.00 80.34 97.27Q81.95 96.54 83.03 95.26Q84.11 93.98 84.64 92.23Q85.17 90.47 85.17 88.39Q85.17 86.03 84.52 84.27Q83.87 82.51 82.71 81.34Q81.55 80.17 79.97 79.59Q78.38 79.00 76.55 79.00ZM89.67 79.00V98.00H104.09V94.49H93.85V89.83H103.06V86.58H93.85V82.51H103.88V79.00Z" fill="#fff"/>
 </svg>`,
   react: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="15" fill="#20232a"/>
@@ -115,7 +116,7 @@ const PROJECT_FAVICONS = {
 export const SHOWCASE_PROJECTS = [
   {
     id: "t3code",
-    title: "T3 Code",
+    title: "RyCode",
     directory: "t3code",
     repositoryUrl: "https://github.com/pingdotgg/t3code.git",
     favicon: PROJECT_FAVICONS.t3code,
@@ -162,9 +163,9 @@ export const SHOWCASE_THREADS = [
     branch: "feat/remote-command-center",
     minutesAgo: 3,
     request:
-      "Give T3 Code a remote-first command center. Make three machines feel one tap away, keep agent work in sync, and make every handoff feel instant.",
+      "Give RyCode a remote-first command center. Make three machines feel one tap away, keep agent work in sync, and make every handoff feel instant.",
     response:
-      "T3 Code now treats every machine like it is right here in the room. ✦\n\n- Moonbase, Suspense Station, and Kernel Cabin stay live together\n- Terminal state follows you without losing a single line\n- Agent work remains perfectly in sync across devices\n- Handoffs land before your train of thought can wander\n\nI also ran the changed workspace: **612 tests passed**.",
+      "RyCode now treats every machine like it is right here in the room. ✦\n\n- Moonbase, Suspense Station, and Kernel Cabin stay live together\n- Terminal state follows you without losing a single line\n- Agent work remains perfectly in sync across devices\n- Handoffs land before your train of thought can wander\n\nI also ran the changed workspace: **612 tests passed**.",
   },
   {
     id: "pocket-command-center",
@@ -329,7 +330,7 @@ async function seedCompanionWorkspace(input: {
   await NodeFSP.writeFile(NodePath.join(input.workspaceRoot, "favicon.svg"), input.favicon);
   await NodeFSP.writeFile(
     NodePath.join(input.workspaceRoot, "README.md"),
-    `# ${input.title}\n\nSeeded by the T3 Code mobile screenshot harness.\n`,
+    `# ${input.title}\n\nSeeded by the RyCode mobile screenshot harness.\n`,
   );
   await initializeRepository({
     workspaceRoot: input.workspaceRoot,

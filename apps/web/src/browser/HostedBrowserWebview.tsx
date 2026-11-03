@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { previewBridge } from "~/components/preview/previewBridge";
+import { focusPaneForThread } from "~/panes/paneStore";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
 import { cn, isMacPlatform } from "~/lib/utils";
@@ -109,10 +110,17 @@ export function HostedBrowserWebview(props: {
   const [webviewGeneration, setWebviewGeneration] = useState(0);
   const [recoverySrc, setRecoverySrc] = useState(initialSrc);
   const latestUrlRef = useRef(initialUrl);
+  // Read when the guest is focused rather than captured by the listener
+  // effect, which deliberately does not reattach for a new ref object.
+  const threadRefRef = useRef(threadRef);
 
   useEffect(() => {
     latestUrlRef.current = initialUrl;
   }, [initialUrl]);
+
+  useEffect(() => {
+    threadRefRef.current = threadRef;
+  }, [threadRef]);
 
   const setWebviewRef = useCallback((node: HTMLElement | null) => {
     webviewRef.current = node as ElectronWebview | null;
@@ -159,15 +167,19 @@ export function HostedBrowserWebview(props: {
     // A click inside the guest only reaches this document as a webview focus
     // event, so open menus and popovers never see the outside press that
     // would dismiss them. Replay it as a pointerdown on the webview itself.
-    const dismissHostPopups = () => {
+    // The same event is the only signal that the user moved into this guest,
+    // and the guest is not a descendant of the pane it appears over, so the
+    // pane row is told explicitly which pane the user is now working in.
+    const followGuestFocus = () => {
       webview.dispatchEvent(
         new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }),
       );
+      focusPaneForThread(threadRefRef.current);
     };
     webview.addEventListener("did-attach", register);
     webview.addEventListener("dom-ready", register);
     webview.addEventListener("render-process-gone", recoverGuest);
-    webview.addEventListener("focus", dismissHostPopups);
+    webview.addEventListener("focus", followGuestFocus);
     register();
     return () => {
       disposed = true;
@@ -175,7 +187,7 @@ export function HostedBrowserWebview(props: {
       webview.removeEventListener("did-attach", register);
       webview.removeEventListener("dom-ready", register);
       webview.removeEventListener("render-process-gone", recoverGuest);
-      webview.removeEventListener("focus", dismissHostPopups);
+      webview.removeEventListener("focus", followGuestFocus);
     };
   }, [clientSettingsHydrated, config, initialSrc, runtimeTabId, webviewGeneration]);
 

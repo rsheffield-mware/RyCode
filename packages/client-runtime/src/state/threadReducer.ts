@@ -470,6 +470,8 @@ export function applyThreadDetailEvent(
           messages,
           checkpoints,
           latestTurn,
+          // The user has moved on; a suggestion for the previous turn is stale.
+          ...(event.payload.role === "user" ? { replySuggestion: null } : {}),
           updatedAt: event.occurredAt,
         },
       };
@@ -514,12 +516,20 @@ export function applyThreadDetailEvent(
             : thread.latestTurn,
       );
 
+      const startsNewTurn =
+        event.payload.session.status === "running" &&
+        event.payload.session.activeTurnId !== null &&
+        event.payload.session.activeTurnId !== thread.latestTurn?.turnId;
+
       return {
         kind: "updated",
         thread: {
           ...thread,
           session: event.payload.session,
           latestTurn,
+          // A suggestion belongs to the turn that produced it; a new turn must
+          // never inherit the previous turn's ghost text.
+          ...(startsNewTurn ? { replySuggestion: null } : {}),
           updatedAt: event.occurredAt,
         },
       };
@@ -724,6 +734,27 @@ export function applyThreadDetailEvent(
       };
     }
 
+    // ── Reply suggestion ────────────────────────────────────────────
+    case "thread.reply-suggestion-completed":
+      // updatedAt stays put: a suggestion is not thread activity. A user
+      // message newer than the one the server sampled means the user already
+      // answered this turn, so the prediction is stale even though the turn
+      // itself has not changed yet.
+      return thread.latestTurn?.turnId !== event.payload.turnId ||
+        latestUserMessageAt(thread) !== event.payload.expectedLatestUserMessageAt
+        ? { kind: "unchanged" }
+        : {
+            kind: "updated",
+            thread: {
+              ...thread,
+              replySuggestion: {
+                text: event.payload.suggestion,
+                turnId: event.payload.turnId,
+                generatedAt: event.payload.generatedAt,
+              },
+            },
+          };
+
     // ── Events that don't mutate thread state directly ──────────────
     case "thread.approval-response-requested":
     case "thread.user-input-response-requested":
@@ -736,6 +767,18 @@ export function applyThreadDetailEvent(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+/** Newest non-imported user message timestamp, matching the server projection. */
+function latestUserMessageAt(thread: OrchestrationThread): string | null {
+  let latest: string | null = null;
+  for (const message of thread.messages) {
+    if (message.role !== "user" || isImportedAgentSessionMessageId(message.id)) continue;
+    if (latest === null || compareDateTimeStrings(message.createdAt, latest) > 0) {
+      latest = message.createdAt;
+    }
+  }
+  return latest;
+}
 
 /**
  * Turn state to settle a still-running latest turn with when its session

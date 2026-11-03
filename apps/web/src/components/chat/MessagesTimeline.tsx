@@ -405,6 +405,7 @@ interface MessagesTimelineProps {
     citation: AssistantCitation,
     sourceAnchor: AssistantCitationSourceAnchor,
   ) => boolean;
+  onRememberAssistantText?: ((text: string) => void) | undefined;
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
   isWorking: boolean;
@@ -480,6 +481,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   citationRequest = null,
   citationHistoryLoading = false,
   onCiteAssistantText,
+  onRememberAssistantText,
   isWorking,
   worktreeSetup = null,
   onCancelWorktreeSetup,
@@ -1274,6 +1276,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               viewport={timelineViewportElement}
               threadRef={citationThreadRef}
               onCite={onCiteAssistantText}
+              onRemember={onRememberAssistantText}
             />
           ) : null}
           <LegendList<MessagesTimelineRow>
@@ -2364,7 +2367,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
-        <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
+        <MessageAuthorHeading>RyCode</MessageAuthorHeading>
         <AssistantCitationSource
           messageId={row.message.id}
           {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}

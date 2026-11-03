@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 const state = vi.hoisted(() => ({
   mode: "notifications",
   inApp: false,
+  dockBounce: true,
   toast: vi.fn(),
   shells: new Map(),
   navigate: vi.fn(),
@@ -30,7 +31,7 @@ vi.mock("../hooks/useSettings", () => ({
   useClientSettings: (
     select: (settings: { notificationMode: string; inAppNotificationsEnabled: boolean }) => unknown,
   ) => select({ notificationMode: state.mode, inAppNotificationsEnabled: state.inApp }),
-  getClientSettings: () => ({ notificationMode: state.mode }),
+  getClientSettings: () => ({ notificationMode: state.mode, dockBounceEnabled: state.dockBounce }),
 }));
 vi.mock("../threadNotifications", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../threadNotifications")>()),
@@ -90,6 +91,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.mode = "notifications";
   state.inApp = false;
+  state.dockBounce = true;
   state.environmentIds = ["one", "two"];
   state.shells.set("one", shell());
   state.shells.set("two", shell());
@@ -121,22 +123,30 @@ it("counts notifying threads across environments, replaces repeat alerts, and cl
   await render();
   complete();
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge.mock.lastCall?.[0]).toBe(1);
   complete("one", "2026-09-13T08:01:00Z");
   complete("two");
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(2);
+  expect(state.badge.mock.lastCall?.[0]).toBe(2);
   expect(TestNotification.sent[0]!.close).toHaveBeenCalledOnce();
   focused = true;
   window.dispatchEvent(new Event("focus"));
-  expect(state.badge).toHaveBeenLastCalledWith(0);
+  expect(state.badge.mock.lastCall?.[0]).toBe(0);
   expect(
     TestNotification.sent.every((notification) => notification.close.mock.calls.length > 0),
   ).toBe(true);
   focused = false;
   complete("two", "2026-09-13T08:02:00Z");
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge.mock.lastCall?.[0]).toBe(1);
+});
+
+it.each([true, false])("passes dockBounceEnabled=%s through to the badge", async (dockBounce) => {
+  state.dockBounce = dockBounce;
+  await render();
+  complete();
+  await render();
+  expect(state.badge.mock.lastCall).toEqual([1, dockBounce]);
 });
 
 it("does not badge old completions on first load or reconnect", async () => {
@@ -155,18 +165,18 @@ it("removes alerts only from environments that leave the client", async () => {
   complete("one");
   complete("two");
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(2);
+  expect(state.badge.mock.lastCall?.[0]).toBe(2);
   const [removed, retained] = TestNotification.sent;
   state.environmentIds = ["two"];
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge.mock.lastCall?.[0]).toBe(1);
   expect(removed!.close).toHaveBeenCalledOnce();
   expect(retained!.close).not.toHaveBeenCalled();
   await render();
   expect(removed!.close).toHaveBeenCalledOnce();
   state.environmentIds = [];
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(0);
+  expect(state.badge.mock.lastCall?.[0]).toBe(0);
   expect(retained!.close).toHaveBeenCalledOnce();
 });
 
@@ -185,14 +195,14 @@ it("starts a fresh count after another native app window gains focus", async () 
   complete();
   await render();
   clear!();
-  expect(state.badge).toHaveBeenLastCalledWith(0);
+  expect(state.badge.mock.lastCall?.[0]).toBe(0);
   complete("two");
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge.mock.lastCall?.[0]).toBe(1);
   await act(async () => renderer!.unmount());
   renderer = undefined;
   expect(unsubscribe).toHaveBeenCalledOnce();
-  expect(state.badge).toHaveBeenLastCalledWith(0);
+  expect(state.badge.mock.lastCall?.[0]).toBe(0);
 });
 
 it.each(["off", "sound", "focused", "denied", "archived"])(
@@ -223,7 +233,7 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
     await render();
     state.shells.set("one", shell({ [flag]: true }));
     await render();
-    expect(state.badge).toHaveBeenLastCalledWith(1);
+    expect(state.badge.mock.lastCall?.[0]).toBe(1);
     const notification = TestNotification.sent[0]!;
     notification.dispatchEvent(new Event("click"));
     expect(state.navigate).toHaveBeenCalledWith({
@@ -232,7 +242,7 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
     });
     state.mode = "sound";
     await render();
-    expect(state.badge).toHaveBeenLastCalledWith(0);
+    expect(state.badge.mock.lastCall?.[0]).toBe(0);
     expect(notification.close).toHaveBeenCalled();
   },
 );
@@ -254,6 +264,6 @@ it("badges background failures with in-app notifications enabled", async () => {
   state.shells.set("one", shell({ latestTurn: { ...thread.latestTurn, state: "error" } }));
   await render();
   expect(TestNotification.sent[0]?.title).toBe("Thread failed");
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge.mock.lastCall?.[0]).toBe(1);
   expect(state.toast).not.toHaveBeenCalled();
 });

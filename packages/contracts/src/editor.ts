@@ -73,6 +73,10 @@ export const EDITORS = [
   { id: "rustrover", label: "RustRover", commands: ["rustrover"], launchStyle: "line-column" },
   { id: "webstorm", label: "WebStorm", commands: ["webstorm"], launchStyle: "line-column" },
   { id: "file-manager", label: "File Manager", commands: null, launchStyle: "direct-path" },
+  // Not an editor, but it launches the same way and the "Open in" picker only
+  // lists ids it names explicitly, so it stays out of that menu. Kept last so
+  // it is never the preferred-editor fallback.
+  { id: "sourcetree", label: "Sourcetree", commands: ["stree"], launchStyle: "direct-path" },
 ] as const satisfies ReadonlyArray<EditorDefinition>;
 
 export const EditorId = Schema.Literals(EDITORS.map((e) => e.id));

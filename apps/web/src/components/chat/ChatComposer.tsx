@@ -31,6 +31,7 @@ import type {
   RuntimeMode,
   ScopedThreadRef,
   ServerProvider,
+  ServerProviderUsageLimits,
   ThreadId,
   SnapShotSource,
 } from "@t3tools/contracts";
@@ -276,6 +277,7 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
+import { ProviderUsageMeter } from "./ProviderUsageMeter";
 import {
   providerSupportsManualCompaction,
   resolveContextWindowModelDisplayName,
@@ -568,7 +570,8 @@ function useComposerRestingTransition(
           footer.style.position = "absolute";
           footer.style.top = "auto";
           footer.style.bottom = "1px";
-          footer.style.height = "3rem";
+          // Matches the resting footer's h-10 on collapse and the prior pin on expansion.
+          footer.style.height = nextIsCollapsed ? "2.5rem" : "3rem";
           if (nextIsCollapsed) {
             footer.style.left = "auto";
             footer.style.right = "1px";
@@ -961,6 +964,10 @@ import {
   stepComposerPromptHistory,
   type ComposerPromptHistoryPosition,
 } from "./composerPromptHistory";
+import {
+  resolveComposerReplySuggestion,
+  shouldAcceptReplySuggestionOnTab,
+} from "./ComposerReplySuggestion.logic";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import type { ContextWindowSnapshot } from "../../lib/contextWindow";
@@ -1042,7 +1049,7 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
       observer.observe(controls);
       controls
         .querySelectorAll<HTMLElement>(
-          "[data-resting-block], [data-composer-control-label], [data-chat-provider-model-picker-label]",
+          "[data-resting-block], [data-composer-control-label], [data-chat-provider-model-picker-label], [data-resting-controls-trailing]",
         )
         .forEach((element) => observer.observe(element));
       measure();
@@ -1184,37 +1191,35 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   );
 });
 
-const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
-  compact: boolean;
+interface ComposerUsageMetersProps {
   activeContextWindow: ContextWindowSnapshot | null;
+  // The usage wheel shows context only while the standalone meter is off, so it never appears twice.
+  usageMeterContextWindow: ContextWindowSnapshot | null;
   reserveContextWindowMeter: boolean;
-  activeThreadModelDisplayName: string | null;
-  isPreparingWorktree: boolean;
-  pendingAction: {
-    questionIndex: number;
-    isLastQuestion: boolean;
-    canAdvance: boolean;
-    isResponding: boolean;
-    isComplete: boolean;
+  activeProviderUsage: {
+    limits: ServerProviderUsageLimits;
+    driver: ServerProvider["driver"];
   } | null;
-  isRunning: boolean;
-  showPlanFollowUpPrompt: boolean;
-  promptHasText: boolean;
-  isSendBusy: boolean;
-  sendDisabledReason: string | null;
-  isConnecting: boolean;
-  isEnvironmentUnavailable: boolean;
-  hasSendableContent: boolean;
-  preserveComposerFocusOnPointerDown?: boolean;
-  onPreviousPendingQuestion: () => void;
-  onInterrupt: () => void;
-  onImplementPlanInNewThread: () => void;
+  activeThreadModelDisplayName: string | null;
   onCompactContext?: (() => void) | undefined;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
-}) {
+}
+
+/** Rendered in the footer when expanded and in the context strip when resting. */
+const ComposerFooterUsageMeters = memo(function ComposerFooterUsageMeters(
+  props: ComposerUsageMetersProps,
+) {
   return (
     <>
+      {props.activeProviderUsage ? (
+        <ProviderUsageMeter
+          limits={props.activeProviderUsage.limits}
+          driver={props.activeProviderUsage.driver}
+          contextWindow={props.usageMeterContextWindow}
+          modelDisplayName={props.activeThreadModelDisplayName}
+        />
+      ) : null}
       {props.activeContextWindow ? (
         <ContextWindowMeter
           usage={props.activeContextWindow}
@@ -1226,6 +1231,58 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
       ) : props.reserveContextWindowMeter ? (
         <ContextWindowMeterPlaceholder />
       ) : null}
+    </>
+  );
+});
+
+// The resting footer keeps only the send button; its meters render in the context strip.
+const RESTING_FOOTER_USAGE_METERS: ComposerUsageMetersProps = {
+  activeContextWindow: null,
+  usageMeterContextWindow: null,
+  reserveContextWindowMeter: false,
+  activeProviderUsage: null,
+  activeThreadModelDisplayName: null,
+  compactDisabled: true,
+  compactDisabledReason: null,
+};
+
+const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
+  props: ComposerUsageMetersProps & {
+    compact: boolean;
+    isPreparingWorktree: boolean;
+    pendingAction: {
+      questionIndex: number;
+      isLastQuestion: boolean;
+      canAdvance: boolean;
+      isResponding: boolean;
+      isComplete: boolean;
+    } | null;
+    isRunning: boolean;
+    showPlanFollowUpPrompt: boolean;
+    promptHasText: boolean;
+    isSendBusy: boolean;
+    sendDisabledReason: string | null;
+    isConnecting: boolean;
+    isEnvironmentUnavailable: boolean;
+    hasSendableContent: boolean;
+    preserveComposerFocusOnPointerDown?: boolean;
+    onPreviousPendingQuestion: () => void;
+    onInterrupt: () => void;
+    onImplementPlanInNewThread: () => void;
+  },
+) {
+  return (
+    <>
+      <ComposerFooterUsageMeters
+        activeContextWindow={props.activeContextWindow}
+        usageMeterContextWindow={props.usageMeterContextWindow}
+        reserveContextWindowMeter={props.reserveContextWindowMeter}
+        activeProviderUsage={props.activeProviderUsage}
+        activeThreadModelDisplayName={props.activeThreadModelDisplayName}
+        onCompactContext={props.onCompactContext}
+        compactDisabled={props.compactDisabled}
+        compactDisabledReason={props.compactDisabledReason}
+      />
       <ComposerPrimaryActions
         compact={props.compact}
         pendingAction={props.pendingAction}
@@ -1339,6 +1396,10 @@ export interface ChatComposerProps {
   activeThread: Thread | undefined;
   /** The routed server thread's shell, present before its detail loads. */
   activeThreadShell: ThreadShell | null;
+  /** False on servers too old to generate suggested replies. */
+  supportsReplySuggestions: boolean;
+  /** `replySuggestionsEnabled` resolved for this thread's project. */
+  replySuggestionsEnabled: boolean;
   /** Timeline messages including optimistic sends, for ArrowUp prompt recall. */
   promptHistoryMessages: ReadonlyArray<ChatMessage>;
   isServerThread: boolean;
@@ -1499,6 +1560,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
+    supportsReplySuggestions,
+    replySuggestionsEnabled,
     promptHistoryMessages,
     isServerThread: _isServerThread,
     isLocalDraftThread: _isLocalDraftThread,
@@ -1895,6 +1958,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const selectedInstanceId =
     selectedProviderEntry?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;
+  const activeProviderUsage = useMemo(() => {
+    const provider = providerStatuses.find(
+      (candidate) => candidate.instanceId === selectedInstanceId,
+    );
+    if (!provider?.usageLimits || provider.usageLimits.windows.length === 0) return null;
+    return { limits: provider.usageLimits, driver: provider.driver };
+  }, [providerStatuses, selectedInstanceId]);
   const noProviderAvailable =
     selectedProviderEntry === undefined && multipleModelSelections === null;
   // Before the catalog arrives, every thread resolves to "no provider". Send
@@ -2527,6 +2597,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const isChoiceOnlyPendingQuestion =
     activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
+  // Accepting or dismissing a suggestion only retires it on this client: the
+  // server keeps it until the turn it belongs to is answered.
+  const [consumedReplySuggestionTurnId, setConsumedReplySuggestionTurnId] = useState<string | null>(
+    null,
+  );
+  const replySuggestion = resolveComposerReplySuggestion({
+    suggestion: activeThread?.replySuggestion,
+    supported: supportsReplySuggestions,
+    enabled: replySuggestionsEnabled,
+    consumedTurnId: consumedReplySuggestionTurnId,
+    phase,
+    composerIsClaimed:
+      isComposerApprovalState ||
+      pendingUserInputs.length > 0 ||
+      (showPlanFollowUpPrompt && activeProposedPlan !== null),
+    promptLength: prompt.length,
+    contextRecordCount: composerContextRecords.size,
+  });
+  const dismissReplySuggestion = () => {
+    setConsumedReplySuggestionTurnId(activeThread?.replySuggestion?.turnId ?? null);
+  };
   const showComposerTopDrawer =
     isComposerApprovalState ||
     pendingUserInputs.length > 0 ||
@@ -3991,13 +4082,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       toggleInteractionMode();
       return true;
     }
+    if (
+      key === "Tab" &&
+      shouldAcceptReplySuggestionOnTab({
+        shiftKey: event.shiftKey,
+        isComposing: event.isComposing,
+        suggestion: replySuggestion,
+        livePrompt: promptRef.current,
+      })
+    ) {
+      if (applyPromptReplacement(0, promptRef.current.length, replySuggestion ?? "")) {
+        dismissReplySuggestion();
+        return true;
+      }
+    }
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive = composerMenuOpenRef.current || trigger !== null;
     if (key === "Escape") {
-      if (!menuIsActive || event.isComposing || event.keyCode === 229) return false;
-      dismissComposerTrigger(trigger);
-      composerMenuOpenRef.current = false;
-      return true;
+      if (event.isComposing || event.keyCode === 229) return false;
+      if (menuIsActive) {
+        dismissComposerTrigger(trigger);
+        composerMenuOpenRef.current = false;
+        return true;
+      }
+      // The way out of the ghost text, for anyone who does not want it.
+      if (replySuggestion !== null) {
+        dismissReplySuggestion();
+        return true;
+      }
+      return false;
     }
     if (menuIsActive) {
       const currentItems = composerMenuItemsRef.current;
@@ -6089,6 +6202,36 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ],
   );
 
+  const composerUsageMetersProps = {
+    activeContextWindow: settings.contextWindowMeterEnabled ? activeContextWindow : null,
+    usageMeterContextWindow: settings.contextWindowMeterEnabled ? null : activeContextWindow,
+    reserveContextWindowMeter,
+    activeProviderUsage,
+    activeThreadModelDisplayName,
+    compactDisabled: compactDisabled || noProviderAvailable || isSendBusy || isConnecting,
+    compactDisabledReason: resolvedCompactDisabledReason,
+    ...(compactCommandAvailable ? { onCompactContext: compactThreadContext } : {}),
+  };
+  const composerAttachButton = showComposerAttachAction ? (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size={isComposerResting ? "icon-xs" : "icon-sm"}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => attachmentInputRef.current?.click()}
+            aria-label="Attach files"
+          />
+        }
+      >
+        <PaperclipIcon />
+      </TooltipTrigger>
+      <TooltipPopup>Attach files</TooltipPopup>
+    </Tooltip>
+  ) : null;
+
   // Render
   // ------------------------------------------------------------------
   return (
@@ -6170,10 +6313,37 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
             >
               {composerControls}
+              {isComposerResting ? (
+                <div
+                  data-resting-controls-trailing="true"
+                  className="flex shrink-0 items-center gap-1"
+                >
+                  {composerAttachButton}
+                  <ComposerFooterUsageMeters {...composerUsageMetersProps} />
+                </div>
+              ) : null}
             </div>,
             restingControlsHost,
           )
         : null}
+      {showComposerAttachAction ? (
+        <input
+          ref={attachmentInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            const files = Array.from(event.currentTarget.files ?? []);
+            event.currentTarget.value = "";
+            // Inserting a chip refocuses the editor after the draft renders;
+            // focusing synchronously here would report the editor's stale text
+            // over the prompt that was just written.
+            void addComposerAttachments(files).then((inserted) => {
+              if (!inserted) focusComposer();
+            });
+          }}
+        />
+      ) : null}
       <ComposerBanner.Dock>
         <ComposerBanner.Column>
           <ComposerBannerStack
@@ -6426,7 +6596,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 "pt-3.5 sm:pt-4",
                 isComposerApprovalState && "pb-3 sm:pb-4",
                 isComposerCollapsedMobile && "hidden",
-                isComposerResting && "py-2 sm:py-2",
+                isComposerResting && "py-1 sm:py-1",
               )}
             >
               {isStashMenuOpen && !composerMenuOpen && !isComposerApprovalState && (
@@ -6803,14 +6973,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <div
                 className={cn(
                   "relative",
-                  isComposerResting && "flex min-w-0 items-center gap-1",
-                  isComposerResting &&
-                    ((settings.contextWindowMeterEnabled && activeContextWindow) ||
-                    reserveContextWindowMeter
-                      ? "pr-28"
-                      : showComposerAttachAction
-                        ? "pr-20"
-                        : "pr-12"),
+                  // Only the send button overlays the resting row; the paperclip and meters sit in the context strip.
+                  isComposerResting && "flex min-w-0 items-center gap-1 pr-12",
                 )}
               >
                 {previewFile ? (
@@ -6885,6 +7049,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPageScrollRelease={onPageScrollRelease}
                     onCitationSubmitAndSend={submitCitationAndSend}
                     onPaste={onComposerPaste}
+                    replySuggestion={replySuggestion ?? undefined}
                     placeholder={
                       isComposerApprovalState
                         ? "Resolve this approval request to continue"
@@ -6958,7 +7123,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isComposerFooterCompact ? "gap-1.5" : "gap-2 sm:gap-0",
                   showMobilePendingAnswerActions && "hidden sm:flex",
                   isComposerResting &&
-                    "absolute bottom-px right-px z-10 h-12 w-auto gap-0 py-0 sm:gap-0 sm:py-0",
+                    "absolute bottom-px right-px z-10 h-10 w-auto gap-0 py-0 sm:gap-0 sm:py-0",
                 )}
               >
                 <div
@@ -6982,50 +7147,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
-                  {showComposerAttachAction ? (
-                    <>
-                      <input
-                        ref={attachmentInputRef}
-                        type="file"
-                        multiple
-                        className="hidden"
-                        onChange={(event) => {
-                          const files = Array.from(event.currentTarget.files ?? []);
-                          event.currentTarget.value = "";
-                          // Inserting a chip refocuses the editor after the draft renders;
-                          // focusing synchronously here would report the editor's stale text
-                          // over the prompt that was just written.
-                          void addComposerAttachments(files).then((inserted) => {
-                            if (!inserted) focusComposer();
-                          });
-                        }}
-                      />
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onPointerDown={(event) => event.preventDefault()}
-                              onClick={() => attachmentInputRef.current?.click()}
-                              aria-label="Attach files"
-                            />
-                          }
-                        >
-                          <PaperclipIcon />
-                        </TooltipTrigger>
-                        <TooltipPopup>Attach files</TooltipPopup>
-                      </Tooltip>
-                    </>
-                  ) : null}
+                  {isComposerResting ? null : composerAttachButton}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
-                    activeContextWindow={
-                      settings.contextWindowMeterEnabled ? activeContextWindow : null
-                    }
-                    reserveContextWindowMeter={reserveContextWindowMeter}
-                    activeThreadModelDisplayName={activeThreadModelDisplayName}
+                    {...(isComposerResting
+                      ? RESTING_FOOTER_USAGE_METERS
+                      : composerUsageMetersProps)}
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}
                     showPlanFollowUpPrompt={
@@ -7046,11 +7173,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
-                    compactDisabled={
-                      compactDisabled || noProviderAvailable || isSendBusy || isConnecting
-                    }
-                    compactDisabledReason={resolvedCompactDisabledReason}
-                    {...(compactCommandAvailable ? { onCompactContext: compactThreadContext } : {})}
                   />
                 </div>
               </div>

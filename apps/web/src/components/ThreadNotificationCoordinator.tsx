@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
@@ -20,6 +21,7 @@ import {
   setNotificationBadge,
   unlockNotificationAudio,
 } from "../threadNotifications";
+import { useVisiblePaneThreadKeys } from "../panes/PaneContext";
 import { resolveSidebarThreadStatus } from "./Sidebar.logic";
 import { toastManager } from "./ui/toast";
 
@@ -35,7 +37,7 @@ export function ThreadNotificationCoordinator() {
   const onNotification = useCallback((environmentId: EnvironmentId, notification: Notification) => {
     pending.current.get(notification.tag)?.notification.close();
     pending.current.set(notification.tag, { environmentId, notification });
-    setNotificationBadge(pending.current.size);
+    setNotificationBadge(pending.current.size, getClientSettings().dockBounceEnabled);
   }, []);
 
   useEffect(() => {
@@ -46,14 +48,15 @@ export function ThreadNotificationCoordinator() {
       notification.close();
       pending.current.delete(tag);
     }
-    if (count !== pending.current.size) setNotificationBadge(pending.current.size);
+    if (count !== pending.current.size)
+      setNotificationBadge(pending.current.size, getClientSettings().dockBounceEnabled);
   }, [environments]);
 
   useEffect(() => {
     const clear = () => {
       for (const { notification } of pending.current.values()) notification.close();
       pending.current.clear();
-      setNotificationBadge(0);
+      setNotificationBadge(0, false);
     };
     clear();
     if (!hasDesktopNotifications(mode)) return;
@@ -100,6 +103,9 @@ function EnvironmentNotifications({
     (settings) => settings.inAppNotificationsEnabled,
   );
   const navigate = useNavigate();
+  // Suppression must consider every pane on screen, not just the route's own
+  // thread: a thread visible in a split pane is being watched too.
+  const visiblePaneThreadKeys = useVisiblePaneThreadKeys();
   const { environmentId: activeEnvironmentId, threadId: activeThreadId } = useParams({
     strict: false,
   });
@@ -154,7 +160,8 @@ function EnvironmentNotifications({
         inAppNotificationsEnabled &&
         document.visibilityState === "visible" &&
         document.hasFocus() &&
-        (activeEnvironmentId !== environmentId || activeThreadId !== thread.id)
+        (activeEnvironmentId !== environmentId || activeThreadId !== thread.id) &&
+        !visiblePaneThreadKeys.has(scopedThreadKey(scopeThreadRef(environmentId, thread.id)))
       ) {
         const toastId = toastManager.add({
           type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
@@ -225,6 +232,7 @@ function EnvironmentNotifications({
   }, [
     activeEnvironmentId,
     activeThreadId,
+    visiblePaneThreadKeys,
     environmentId,
     inAppNotificationsEnabled,
     mode,

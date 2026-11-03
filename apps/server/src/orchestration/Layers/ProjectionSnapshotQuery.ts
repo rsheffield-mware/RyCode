@@ -30,6 +30,7 @@ import {
   ModelSelection,
   ProjectId,
   ThreadLinkedPullRequest,
+  ThreadReplySuggestion,
   ThreadTitleState,
   ThreadId,
   ThreadPullRequestSnapshot,
@@ -130,6 +131,7 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     titleState: Schema.NullOr(Schema.fromJsonString(ThreadTitleState)),
+    replySuggestion: Schema.NullOr(Schema.fromJsonString(ThreadReplySuggestion)),
     linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
     branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
   }),
@@ -568,6 +570,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_state_json AS "titleState",
+          reply_suggestion_json AS "replySuggestion",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -609,6 +612,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_state_json AS "titleState",
+          reply_suggestion_json AS "replySuggestion",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -682,6 +686,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_state_json AS "titleState",
+          reply_suggestion_json AS "replySuggestion",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -1247,6 +1252,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_state_json AS "titleState",
+          reply_suggestion_json AS "replySuggestion",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -1708,7 +1714,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             'thread.activity-appended',
             'thread.turn-diff-completed',
             'thread.reverted',
-            'thread.session-set'
+            'thread.session-set',
+            'thread.reply-suggestion-completed'
           )
       `,
   });
@@ -2343,6 +2350,7 @@ pending_approval_requests AS (
                 activeOrderKey: row.activeOrderKey ?? null,
                 titleRegeneration: mapTitleRegeneration(row),
                 titleState: row.titleState,
+                replySuggestion: row.replySuggestion,
                 deletedAt: row.deletedAt,
                 messages: messagesByThread.get(row.threadId) ?? [],
                 proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
@@ -2588,6 +2596,7 @@ pending_approval_requests AS (
                   activeOrderKey: row.activeOrderKey ?? null,
                   titleRegeneration: mapTitleRegeneration(row),
                   titleState: row.titleState,
+                  replySuggestion: row.replySuggestion,
                   deletedAt: row.deletedAt,
                   messages: [],
                   proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
@@ -3564,6 +3573,7 @@ pending_approval_requests AS (
         activeOrderKey: threadRow.value.activeOrderKey ?? null,
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         titleState: threadRow.value.titleState,
+        replySuggestion: threadRow.value.replySuggestion,
         deletedAt: null,
         messages: messageRows.map((row) => {
           const message = {

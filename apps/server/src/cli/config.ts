@@ -38,7 +38,7 @@ const hostFlag = Flag.String("host").pipe(
 );
 export const baseDirFlag = Flag.String("base-dir").pipe(
   Flag.withDescription(
-    "Explicit T3 Code data directory; runtime state is stored under userdata (equivalent to T3CODE_HOME).",
+    "Explicit RyCode data directory; runtime state is stored under userdata (equivalent to T3CODE_HOME).",
   ),
   Flag.optional,
 );
@@ -386,7 +386,7 @@ export const resolveServerConfig = (
     );
     const logLevel = Option.getOrElse(cliLogLevel, () => env.logLevel);
 
-    // T3 Code's own OTLP variables name no signal, so the one answer they give
+    // RyCode's own OTLP variables name no signal, so the one answer they give
     // is the answer for all three.
     const signalExport: SignalExport = {
       protocol: env.otlpProtocol,

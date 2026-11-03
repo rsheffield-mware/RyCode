@@ -7,6 +7,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  * remains data-driven.
  */
 export type ThreadActionMenuId =
+  | "open-in-new-pane"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "project-settings"
@@ -52,6 +53,12 @@ export interface ThreadActionMenuState {
     readonly titleRegeneration: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
+  /**
+   * Whether this surface can open the thread beside the current one. Absent on
+   * surfaces with no pane row behind them, and false once the pane limit is
+   * reached or the thread is already on screen.
+   */
+  readonly canOpenInNewPane?: boolean;
 }
 
 /**
@@ -63,6 +70,15 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   return [
+    ...(state.canOpenInNewPane
+      ? [
+          {
+            id: "open-in-new-pane" as const,
+            label: "Open in new pane",
+            icon: "columns-2",
+          },
+        ]
+      : []),
     ...(state.branch
       ? [
           {

@@ -63,6 +63,7 @@ import {
   ServerSettingsService,
 } from "../../serverSettings.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { withProjectMemory } from "../projectMemory.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 const isProviderAdapterProcessError = Schema.is(ProviderAdapterProcessError);
@@ -118,6 +119,11 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
   event.commandId !== null ? `command:${event.commandId}` : `event:${event.eventId}`;
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
+// Turns a reply suggestion was already attempted for. Bounded like the
+// turn-start keys: this only has to outlive a session reconnecting, and a
+// forgotten entry costs one extra model call, never a wrong suggestion.
+const REPLY_SUGGESTION_TURN_KEY_MAX = 1_000;
+const REPLY_SUGGESTION_TURN_KEY_TTL = Duration.hours(6);
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 
@@ -241,6 +247,15 @@ const make = Effect.gen(function* () {
     lookup: () => Effect.succeed(true),
   });
 
+  // A session going ready again (reconnect, restart) must not re-spend a model
+  // call on a turn that already has a suggestion; the decider rejects the
+  // duplicate, but only after the call has been paid for.
+  const replySuggestionTurnKeys = yield* Cache.make<string, true>({
+    capacity: REPLY_SUGGESTION_TURN_KEY_MAX,
+    timeToLive: REPLY_SUGGESTION_TURN_KEY_TTL,
+    lookup: () => Effect.succeed(true),
+  });
+
   const hasHandledTurnStartRecently = (key: string) =>
     Cache.getOption(handledTurnStartKeys, key).pipe(
       Effect.flatMap((cached) =>
@@ -253,6 +268,7 @@ const make = Effect.gen(function* () {
   type QueuedTurnStart = Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>;
   // Turn starts received while a thread compacts, replayed in order once its session is restored.
   const turnsAfterCompaction = new Map<ThreadId, Array<QueuedTurnStart>>();
+
   // Replay command id → the queued turn start it re-requests. `sent` settles once the replay's
   // provider send finishes, which is what lets the next queued turn follow it in order.
   const resumedTurnStarts = new Map<
@@ -1208,6 +1224,90 @@ const make = Effect.gen(function* () {
     processThreadTitleRegenerationSafely,
   );
 
+  /**
+   * Predict the user's next message once a turn settles, so the composer can
+   * offer it as ghost text. Opt-in: every run costs a text generation call.
+   */
+  const processReplySuggestionSafely = Effect.fn("processReplySuggestionSafely")(
+    function* (event: Extract<ProviderIntentEvent, { type: "thread.session-set" }>) {
+      const thread = yield* resolveThreadShell(event.payload.threadId);
+      // The session leaving "running" is the turn-end signal; only a cleanly
+      // completed turn is worth predicting a reply to.
+      if (!thread || thread.latestTurn?.state !== "completed") return;
+      const turnId = thread.latestTurn.turnId;
+      const suggestionTurnKey = `${event.payload.threadId}:${turnId}`;
+      if (Option.isSome(yield* Cache.getOption(replySuggestionTurnKeys, suggestionTurnKey))) return;
+      const latestUserMessageAt = thread.latestUserMessageAt;
+
+      const settings = yield* serverSettingsService.getSettings;
+      const { replySuggestionsEnabled, textGenerationModelSelection: modelSelection } =
+        resolveProjectSettings(settings, thread.projectId).settings;
+      if (!replySuggestionsEnabled) return;
+      yield* Cache.set(replySuggestionTurnKeys, suggestionTurnKey, true);
+
+      const detail = yield* resolveThreadDetail(event.payload.threadId);
+      if (!detail) return;
+      const { message } = formatThreadTitleContext(detail.messages);
+      if (message.length === 0) return;
+
+      const project = yield* resolveProject(thread.projectId);
+      const cwd =
+        resolveThreadWorkspaceCwd({ thread: detail, projects: project ? [project] : [] }) ??
+        process.cwd();
+
+      const generated = yield* textGeneration
+        .generateReplySuggestion({
+          cwd,
+          transcript: message,
+          modelSelection,
+        })
+        .pipe(Effect.retry({ times: 2, schedule: Schedule.exponential("2 seconds") }));
+      // An empty suggestion is the model saying there is no sensible reply.
+      if (generated.suggestion.length === 0) return;
+
+      // The user may have answered while the model was thinking. A new user
+      // message makes the suggestion stale even before its turn starts, which
+      // is why the turn id alone is not enough here.
+      const latestThread = yield* resolveThreadShell(event.payload.threadId);
+      if (
+        latestThread?.latestTurn?.turnId !== turnId ||
+        latestThread.latestUserMessageAt !== latestUserMessageAt
+      ) {
+        return;
+      }
+
+      yield* orchestrationEngine
+        .dispatch({
+          type: "thread.reply-suggestion.completed",
+          commandId: yield* serverCommandId("thread-reply-suggestion"),
+          threadId: event.payload.threadId,
+          turnId,
+          suggestion: generated.suggestion,
+          expectedLatestUserMessageAt: latestUserMessageAt,
+        })
+        // The decider rejects a suggestion the thread has already moved past.
+        // That is the expected outcome of a race, not a failure to report.
+        .pipe(Effect.catchTag("OrchestrationCommandInvariantError", () => Effect.void));
+    },
+    (effect, event) =>
+      effect.pipe(
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.failCause(cause);
+          }
+          // A suggestion is an optional nicety; a failure never reaches the user.
+          return Effect.logWarning(
+            "provider command reactor failed to generate a reply suggestion",
+            {
+              threadId: event.payload.threadId,
+              cause: Cause.pretty(cause),
+            },
+          );
+        }),
+      ),
+  );
+  const replySuggestionWorker = yield* makeDrainableWorker(processReplySuggestionSafely);
+
   const processTurnStartRequested = Effect.fn("processTurnStartRequested")(function* (
     receivedEvent: Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>,
   ) {
@@ -1483,12 +1583,19 @@ const make = Effect.gen(function* () {
       turnsAfterCompaction.set(event.payload.threadId, queued);
       return;
     }
+    const projectMemory = resolveProjectSettings(
+      yield* serverSettingsService.getSettings,
+      thread.projectId,
+    ).settings.projectMemory;
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
-      messageText: projectComposerContextForProvider({
-        text: message.text,
-        records: message.context?.records ?? [],
-      }),
+      messageText: withProjectMemory(
+        projectComposerContextForProvider({
+          text: message.text,
+          records: message.context?.records ?? [],
+        }),
+        projectMemory,
+      ),
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }
@@ -1791,8 +1898,10 @@ const make = Effect.gen(function* () {
           yield* maybeRefineThreadTitle(event.payload.threadId);
         return;
       case "thread.session-set":
-        if (event.payload.session.status === "ready")
+        if (event.payload.session.status === "ready") {
           yield* maybeRefineThreadTitle(event.payload.threadId);
+          yield* replySuggestionWorker.enqueue(event);
+        }
         return;
       case "thread.runtime-mode-set": {
         const thread = yield* resolveThreadShell(event.payload.threadId);
@@ -1943,6 +2052,7 @@ const make = Effect.gen(function* () {
     drain: Effect.gen(function* () {
       yield* worker.drain;
       yield* threadTitleRegenerationWorker.drain;
+      yield* replySuggestionWorker.drain;
     }),
   } satisfies ProviderCommandReactorShape;
 });
