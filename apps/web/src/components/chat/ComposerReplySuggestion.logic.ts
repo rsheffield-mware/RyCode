@@ -1,14 +1,8 @@
-/**
- * Decides when the composer offers the server's predicted next reply as ghost
- * text, and when Tab accepts it instead of doing its usual work.
- *
- * @module composerReplySuggestion
- */
-import type { ThreadReplySuggestion } from "@t3tools/contracts";
+import type { OrchestrationV2AppThread } from "@t3tools/contracts";
 
 export interface ComposerReplySuggestionInput {
   /** The routed thread's suggestion, or null/undefined when it has none. */
-  readonly suggestion: ThreadReplySuggestion | null | undefined;
+  readonly suggestion: OrchestrationV2AppThread["replySuggestion"];
   /** False on servers too old to generate suggestions. */
   readonly supported: boolean;
   /** Resolved for the thread's project, matching how the server gates generation. */
@@ -24,15 +18,6 @@ export interface ComposerReplySuggestionInput {
   readonly contextRecordCount: number;
 }
 
-/**
- * The suggestion to render, or null. This is the single gate: the composer
- * shows exactly what this returns and Tab accepts exactly what this returns,
- * so ghost text can never be accepted while it is invisible.
- *
- * Nothing is offered while a turn is in flight, while another flow owns the
- * composer, or once the composer holds anything of the user's own: the
- * prediction is about the turn that just ended, and the user's draft outranks it.
- */
 export function resolveComposerReplySuggestion(input: ComposerReplySuggestionInput): string | null {
   if (!input.supported || !input.enabled || input.composerIsClaimed) return null;
   if (input.phase === "running" || input.phase === "connecting") return null;
@@ -48,11 +33,7 @@ export interface ReplySuggestionTabInput {
   readonly isComposing: boolean;
   /** Whatever `resolveComposerReplySuggestion` returned. */
   readonly suggestion: string | null;
-  /**
-   * Composer text as of the keypress. The resolver already required an empty
-   * composer; this re-reads it live so a keystroke landing before the next
-   * render cannot let Tab replace text the user just typed.
-   */
+
   readonly livePrompt: string;
 }
 

@@ -1,11 +1,3 @@
-/**
- * Runtime state for the pane row: which pane is focused, how wide each pane
- * is, and which thread each mounted pane currently shows.
- *
- * The thread registry exists so app-wide singletons can ask about *every*
- * visible pane rather than only the route's own params — notification
- * suppression and the sidebar's active-row highlight both need that.
- */
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
@@ -161,14 +153,6 @@ export function readFocusedPaneThreadRef(): ScopedThreadRef | null {
   return usePaneThreadStore.getState().threadRefByPaneId[resolved] ?? null;
 }
 
-/**
- * Focuses the pane showing a thread.
- *
- * A native preview guest is not a descendant of the pane it appears over: it
- * is rendered once at the app root and positioned across the pane's box, so a
- * click inside it never reaches the pane's focus capture handlers. The pane it
- * visually belongs to has to be named explicitly instead.
- */
 export function focusPaneForThread(threadRef: ScopedThreadRef | null): void {
   if (threadRef === null) return;
   const { focusPane, paneIds } = usePaneFocusStore.getState();
@@ -179,11 +163,6 @@ export function focusPaneForThread(threadRef: ScopedThreadRef | null): void {
   if (paneId !== undefined) focusPane(paneId);
 }
 
-/**
- * Whether a pane may run the app-wide window handlers right now. Read inside
- * the handler rather than captured as a dependency, so changing focus never
- * detaches and reattaches a capture-phase listener.
- */
 export function readPaneOwnsGlobalHandlers(paneId: string): boolean {
   const { focusedPaneId, paneIds } = usePaneFocusStore.getState();
   return paneOwnsGlobalHandlers({

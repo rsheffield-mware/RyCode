@@ -101,7 +101,8 @@ export function ProviderUsageMeter({
                   cy="12"
                   r={radius}
                   fill="none"
-                  stroke="color-mix(in oklab, var(--color-muted-foreground) 24%, transparent)"
+                  stroke="var(--color-muted-foreground)"
+                  strokeOpacity={0.24}
                   strokeWidth="3"
                 />
                 <circle
@@ -123,7 +124,8 @@ export function ProviderUsageMeter({
                       cy="12"
                       r={innerRadius}
                       fill="none"
-                      stroke="color-mix(in oklab, var(--color-muted-foreground) 24%, transparent)"
+                      stroke="var(--color-muted-foreground)"
+                      strokeOpacity={0.24}
                       strokeWidth="2.5"
                     />
                     <circle

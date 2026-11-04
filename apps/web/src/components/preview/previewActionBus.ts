@@ -1,14 +1,5 @@
-"use client";
-
-/**
- * Typed window-event bus for preview-panel actions. Lets the global
- * keybinding handler in `routes/_chat.tsx` reach `ChatView`'s URL-aware
- * arbitration without prop drilling or shared refs.
- *
- * Every action carries the pane it is meant for. In a split layout several
- * ChatViews are mounted at once, and an unaddressed broadcast would toggle
- * the preview in all of them.
- */
+import { PRIMARY_PANE_ID } from "../../panes/paneLayout";
+import { usePaneFocusStore } from "../../panes/paneStore";
 export type PreviewAction =
   | "toggle-panel"
   | "refresh"
@@ -25,7 +16,10 @@ export interface PreviewActionMessage {
 
 const EVENT_NAME = "t3code:preview-action";
 
-export function dispatchPreviewAction(action: PreviewAction, paneId: string): void {
+export function dispatchPreviewAction(
+  action: PreviewAction,
+  paneId = usePaneFocusStore.getState().focusedPaneId ?? PRIMARY_PANE_ID,
+): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
     new CustomEvent<PreviewActionMessage>(EVENT_NAME, { detail: { action, paneId } }),
@@ -34,8 +28,8 @@ export function dispatchPreviewAction(action: PreviewAction, paneId: string): vo
 
 /** Subscribes to actions addressed to `paneId`; other panes' actions are ignored. */
 export function subscribePreviewAction(
-  paneId: string,
   listener: (action: PreviewAction) => void,
+  paneId: string = PRIMARY_PANE_ID,
 ): () => void {
   if (typeof window === "undefined") return () => {};
   const handler = (event: Event) => {

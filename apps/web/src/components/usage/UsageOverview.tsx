@@ -1,6 +1,5 @@
 import type { MergedUsage } from "@t3tools/shared/usageMerge";
 import { formatCount, formatDayShort, formatTokens } from "@t3tools/shared/usageFormat";
-import { useMemo } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { buildUsageHeatmap, countActiveDays, favoriteModel } from "./UsageOverview.logic";
@@ -16,7 +15,7 @@ export function UsageOverview({
   readonly days: readonly string[];
   readonly merged: MergedUsage;
 }) {
-  const weeks = useMemo(() => buildUsageHeatmap(days, merged.daily), [days, merged.daily]);
+  const weeks = (() => buildUsageHeatmap(days, merged.daily))();
   const favorite = favoriteModel(merged.models);
 
   return (
@@ -29,7 +28,7 @@ export function UsageOverview({
           label="Active days"
           value={`${formatCount(countActiveDays(merged.daily))} / ${formatCount(days.length)}`}
         />
-        <OverviewTile label="Favorite model" value={favorite === null ? "—" : favorite.model} />
+        <OverviewTile label="Favorite model" value={favorite === null ? "None" : favorite.model} />
       </div>
       <div className="flex flex-col gap-2">
         <div
@@ -50,7 +49,7 @@ export function UsageOverview({
                   <TooltipTrigger
                     render={
                       <span
-                        className="size-3.5 rounded-[3px] bg-muted"
+                        className="size-3.5 rounded-xs bg-muted"
                         style={
                           background === undefined ? undefined : { backgroundColor: background }
                         }

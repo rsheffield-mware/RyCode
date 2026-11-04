@@ -2,7 +2,7 @@ import type { ClientSettings } from "@t3tools/contracts/settings";
 import { BellIcon, BellOffIcon } from "lucide-react";
 import { useState } from "react";
 
-import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
+import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
 import { NOTIFICATION_MODE_LABELS, prepareNotificationMode } from "~/threadNotifications";
 import { Button } from "../ui/button";
 import {
@@ -19,7 +19,7 @@ type NotificationMode = ClientSettings["notificationMode"];
 
 export function NotificationBell() {
   const mode = useClientSettings((settings) => settings.notificationMode);
-  const updateSettings = useUpdateClientSettings();
+  const updateSettings = updateClientSettings;
   const [requesting, setRequesting] = useState(false);
 
   const selectMode = async (value: string) => {

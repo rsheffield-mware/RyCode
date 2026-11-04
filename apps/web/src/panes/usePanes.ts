@@ -3,7 +3,6 @@
  * on `_chat`, so opening or closing a pane is a navigation.
  */
 import { useLocation, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { useCallback, useMemo } from "react";
 
 import {
   buildDraftThreadRouteParams,
@@ -56,15 +55,9 @@ export function useSecondaryPanes(): SecondaryPaneLayout {
     strict: false,
     select: (search) => (search as ChatPaneSearch).panes ?? null,
   });
-  return useMemo(() => decodeSecondaryPanes(raw), [raw]);
+  return (() => decodeSecondaryPanes(raw))();
 }
 
-/**
- * Rebuilt rather than spread so a stale pane never survives an edit.
- * An empty layout clears the key explicitly: `retainSearchParams` re-applies
- * the previous value for a key the updater omits, which resurrected closed
- * panes.
- */
 function paneSearchUpdater(
   layout: SecondaryPaneLayout,
 ): (previous: ChatPaneSearch) => ChatPaneSearch {
@@ -88,11 +81,7 @@ export interface PaneActions {
   openInNewPane: (target: ThreadRouteTarget, edge?: PaneEdge) => void;
   /** Closes a pane; closing the primary promotes the next pane onto the route. */
   closePane: (paneId: string) => void;
-  /**
-   * Points an existing pane at a different thread. Used when a draft opened in
-   * a secondary pane is promoted to a server thread: that pane must follow the
-   * promotion without touching the route the primary pane owns.
-   */
+
   replacePane: (paneId: string, target: ThreadRouteTarget) => void;
   /**
    * Resolves a drag-to-split drop. A thread already on screen moves to the
@@ -121,7 +110,7 @@ function paneFloorToast() {
   );
 }
 
-export function usePaneActions(input: {
+function usePaneActions(input: {
   readonly primaryTarget: ThreadRouteTarget | null;
   readonly layout: SecondaryPaneLayout;
 }): PaneActions {
@@ -135,123 +124,109 @@ export function usePaneActions(input: {
   const setGroupFractions = usePaneSizingStore((state) => state.setGroupFractions);
   const setPaneFractions = usePaneSizingStore((state) => state.setPaneFractions);
 
-  const persistSplitSizing = useCallback(
-    (sizing: PaneSplitSizing | null) => {
-      if (sizing === null) return;
-      if (sizing.groupIndex === null) {
-        setGroupFractions(sizing.axis, sizing.fractions);
-        return;
-      }
-      setPaneFractions(sizing.axis, sizing.groupIndex, sizing.fractions);
-    },
-    [setGroupFractions, setPaneFractions],
-  );
+  const persistSplitSizing = (sizing: PaneSplitSizing | null) => {
+    if (sizing === null) return;
+    if (sizing.groupIndex === null) {
+      setGroupFractions(sizing.axis, sizing.fractions);
+      return;
+    }
+    setPaneFractions(sizing.axis, sizing.groupIndex, sizing.fractions);
+  };
 
-  const splitInto = useCallback(
-    (target: ThreadRouteTarget, anchorPaneId: string, edge: PaneEdge): PaneDropPlan["kind"] => {
-      const rect = measurePaneRect(anchorPaneId);
-      const plan = planPaneDrop({
-        primaryTarget,
-        layout,
-        target,
-        anchorPaneId,
-        edge,
-        anchorExtent: rect === null ? 0 : paneRectExtent(rect, edge),
-      });
-      if (plan.kind !== "secondary" && plan.kind !== "promote") return plan.kind;
-      persistSplitSizing(plan.sizing);
-      const droppedPaneId = paneTargetToken(target);
-      if (plan.kind === "secondary") {
-        void navigate({ to: pathname, search: paneSearchUpdater(plan.layout) }).then(() =>
-          focusPane(droppedPaneId),
-        );
-        return plan.kind;
-      }
-      // Landing ahead of the primary pane rewrites the route: the grid's first
-      // slot is the path params, so the dropped thread becomes primary.
-      const promotedIsDropped = paneTargetToken(plan.primary) === droppedPaneId;
-      void navigate({
-        ...navigateTargetOptions(plan.primary),
-        search: paneSearchUpdater(plan.layout),
-      }).then(() => focusPane(promotedIsDropped ? PRIMARY_PANE_ID : droppedPaneId));
-      return plan.kind;
-    },
-    [focusPane, layout, navigate, pathname, persistSplitSizing, primaryTarget],
-  );
-
-  const openInNewPane = useCallback(
-    (target: ThreadRouteTarget, edge: PaneEdge = "right") => {
-      const token = paneTargetToken(target);
-      const alreadyOpen =
-        (primaryTarget !== null && paneTargetToken(primaryTarget) === token) ||
-        flattenSecondaryPanes(layout).some((pane) => pane.paneId === token);
-      if (alreadyOpen) return;
-      // A menu or palette split has no pointer, so it acts on the pane the
-      // user is working in.
-      const { focusedPaneId, paneIds } = usePaneFocusStore.getState();
-      const anchorPaneId =
-        focusedPaneId !== null && paneIds.includes(focusedPaneId) ? focusedPaneId : PRIMARY_PANE_ID;
-      // The 2x2 cap and the size guards each block one direction at a time,
-      // and "open this beside the current thread" is the real intent, so a
-      // refusal of either kind tries the perpendicular edge before giving up.
-      const attempted = splitInto(target, anchorPaneId, edge);
-      if (!isPaneSplitRefusal(attempted)) return;
-      const fallback = splitInto(target, anchorPaneId, PERPENDICULAR_EDGE[edge]);
-      const refusal = resolvePaneSplitRefusal(attempted, fallback);
-      if (refusal === "full") paneLimitToast();
-      else if (refusal === "no-room") paneFloorToast();
-    },
-    [layout, primaryTarget, splitInto],
-  );
-
-  const closePane = useCallback(
-    (paneId: string) => {
-      if (paneId !== PRIMARY_PANE_ID) {
-        void navigate({
-          to: pathname,
-          search: paneSearchUpdater(removeSecondaryPane(layout, paneId)),
-        });
-        return;
-      }
-      const promotion = promotePrimaryPane(layout);
-      if (!promotion) return;
-      void navigate({
-        ...navigateTargetOptions(promotion.promoted),
-        search: paneSearchUpdater(promotion.layout),
-      });
-      focusPane(PRIMARY_PANE_ID);
-    },
-    [focusPane, layout, navigate, pathname],
-  );
-
-  const replacePane = useCallback(
-    (paneId: string, target: ThreadRouteTarget) => {
-      const nextPaneId = paneTargetToken(target);
-      if (paneId === nextPaneId) return;
-      let found = false;
-      const groups = layout.groups.map((group) =>
-        group.map((pane) => {
-          if (pane.paneId !== paneId) return pane;
-          found = true;
-          return { paneId: nextPaneId, target };
-        }),
+  const splitInto = (
+    target: ThreadRouteTarget,
+    anchorPaneId: string,
+    edge: PaneEdge,
+  ): PaneDropPlan["kind"] => {
+    const rect = measurePaneRect(anchorPaneId);
+    const plan = planPaneDrop({
+      primaryTarget,
+      layout,
+      target,
+      anchorPaneId,
+      edge,
+      anchorExtent: rect === null ? 0 : paneRectExtent(rect, edge),
+    });
+    if (plan.kind !== "secondary" && plan.kind !== "promote") return plan.kind;
+    persistSplitSizing(plan.sizing);
+    const droppedPaneId = paneTargetToken(target);
+    if (plan.kind === "secondary") {
+      void navigate({ to: pathname, search: paneSearchUpdater(plan.layout) }).then(() =>
+        focusPane(droppedPaneId),
       );
-      if (!found) return;
-      void navigate({ to: pathname, search: paneSearchUpdater({ axis: layout.axis, groups }) });
-      focusPane(nextPaneId);
-    },
-    [focusPane, layout, navigate, pathname],
-  );
+      return plan.kind;
+    }
+    // Landing ahead of the primary pane rewrites the route: the grid's first
+    // slot is the path params, so the dropped thread becomes primary.
+    const promotedIsDropped = paneTargetToken(plan.primary) === droppedPaneId;
+    void navigate({
+      ...navigateTargetOptions(plan.primary),
+      search: paneSearchUpdater(plan.layout),
+    }).then(() => focusPane(promotedIsDropped ? PRIMARY_PANE_ID : droppedPaneId));
+    return plan.kind;
+  };
 
-  const dropIntoPaneRow = useCallback(
-    (target: ThreadRouteTarget, drop: ArmedPaneDrop) => {
-      const outcome =
-        drop.kind === "no-room" ? drop.reason : splitInto(target, drop.paneId, drop.edge);
-      if (outcome === "full") paneLimitToast();
-      else if (outcome === "no-room") paneFloorToast();
-    },
-    [splitInto],
-  );
+  const openInNewPane = (target: ThreadRouteTarget, edge: PaneEdge = "right") => {
+    const token = paneTargetToken(target);
+    const alreadyOpen =
+      (primaryTarget !== null && paneTargetToken(primaryTarget) === token) ||
+      flattenSecondaryPanes(layout).some((pane) => pane.paneId === token);
+    if (alreadyOpen) return;
+    // A menu or palette split has no pointer, so it acts on the pane the
+    // user is working in.
+    const { focusedPaneId, paneIds } = usePaneFocusStore.getState();
+    const anchorPaneId =
+      focusedPaneId !== null && paneIds.includes(focusedPaneId) ? focusedPaneId : PRIMARY_PANE_ID;
+    // The 2x2 cap and the size guards each block one direction at a time,
+    // and "open this beside the current thread" is the real intent, so a
+    // refusal of either kind tries the perpendicular edge before giving up.
+    const attempted = splitInto(target, anchorPaneId, edge);
+    if (!isPaneSplitRefusal(attempted)) return;
+    const fallback = splitInto(target, anchorPaneId, PERPENDICULAR_EDGE[edge]);
+    const refusal = resolvePaneSplitRefusal(attempted, fallback);
+    if (refusal === "full") paneLimitToast();
+    else if (refusal === "no-room") paneFloorToast();
+  };
+
+  const closePane = (paneId: string) => {
+    if (paneId !== PRIMARY_PANE_ID) {
+      void navigate({
+        to: pathname,
+        search: paneSearchUpdater(removeSecondaryPane(layout, paneId)),
+      });
+      return;
+    }
+    const promotion = promotePrimaryPane(layout);
+    if (!promotion) return;
+    void navigate({
+      ...navigateTargetOptions(promotion.promoted),
+      search: paneSearchUpdater(promotion.layout),
+    });
+    focusPane(PRIMARY_PANE_ID);
+  };
+
+  const replacePane = (paneId: string, target: ThreadRouteTarget) => {
+    const nextPaneId = paneTargetToken(target);
+    if (paneId === nextPaneId) return;
+    let found = false;
+    const groups = layout.groups.map((group) =>
+      group.map((pane) => {
+        if (pane.paneId !== paneId) return pane;
+        found = true;
+        return { paneId: nextPaneId, target };
+      }),
+    );
+    if (!found) return;
+    void navigate({ to: pathname, search: paneSearchUpdater({ axis: layout.axis, groups }) });
+    focusPane(nextPaneId);
+  };
+
+  const dropIntoPaneRow = (target: ThreadRouteTarget, drop: ArmedPaneDrop) => {
+    const outcome =
+      drop.kind === "no-room" ? drop.reason : splitInto(target, drop.paneId, drop.edge);
+    if (outcome === "full") paneLimitToast();
+    else if (outcome === "no-room") paneFloorToast();
+  };
 
   return { openInNewPane, closePane, replacePane, dropIntoPaneRow };
 }

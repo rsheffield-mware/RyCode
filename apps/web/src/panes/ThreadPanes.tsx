@@ -1,13 +1,4 @@
-/**
- * Renders the pane grid: one fully functional thread per pane, separated by
- * drag-to-resize splitters. Groups run along the root axis, panes inside a
- * group run across it, and both are capped at two.
- *
- * A lone pane renders `ThreadRouteView` directly with no wrapper element and
- * no context provider, so the single-pane tree is exactly what it was before
- * panes existed.
- */
-import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { useEffect, useRef, useState, Fragment } from "react";
 
 import { notifyBrowserSurfaceLayoutChanged } from "../browser/browserSurfaceLayout";
 import { ThreadRouteView } from "../components/ThreadRouteView";
@@ -41,41 +32,29 @@ function PaneSplitter({
   orientation: SplitterOrientation;
 }) {
   const lastPositionRef = useRef<number | null>(null);
-  const readPosition = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) =>
-      orientation === "vertical" ? event.clientX : event.clientY,
-    [orientation],
-  );
-  const handlePointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      lastPositionRef.current = readPosition(event);
-      event.currentTarget.setPointerCapture(event.pointerId);
-    },
-    [readPosition],
-  );
-  const handlePointerMove = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const lastPosition = lastPositionRef.current;
-      if (lastPosition === null) return;
-      const position = readPosition(event);
-      lastPositionRef.current = position;
-      onDragDelta(position - lastPosition);
-    },
-    [onDragDelta, readPosition],
-  );
-  const endDrag = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (lastPositionRef.current === null) return;
-      lastPositionRef.current = null;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      onDragEnd();
-    },
-    [onDragEnd],
-  );
+  const readPosition = (event: React.PointerEvent<HTMLDivElement>) =>
+    orientation === "vertical" ? event.clientX : event.clientY;
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    lastPositionRef.current = readPosition(event);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const lastPosition = lastPositionRef.current;
+    if (lastPosition === null) return;
+    const position = readPosition(event);
+    lastPositionRef.current = position;
+    onDragDelta(position - lastPosition);
+  };
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (lastPositionRef.current === null) return;
+    lastPositionRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    onDragEnd();
+  };
   return (
     <div
       aria-label="Resize panes"
@@ -100,7 +79,13 @@ function PaneSplitter({
 /** Which stored bucket a live drag is editing. */
 type DragScope = { readonly key: string; readonly fractions: ReadonlyArray<number> };
 
-export function ThreadPanes({ primaryTarget }: { primaryTarget: ThreadRouteTarget }) {
+export function ThreadPanes({
+  primaryTarget,
+  background = false,
+}: {
+  primaryTarget: ThreadRouteTarget;
+  background?: boolean;
+}) {
   const secondaryPanes = useSecondaryPanes();
   const storedGroupFractions = usePaneSizingStore((state) => state.groupFractions);
   const storedPaneFractions = usePaneSizingStore((state) => state.paneFractions);
@@ -109,35 +94,25 @@ export function ThreadPanes({ primaryTarget }: { primaryTarget: ThreadRouteTarge
   const resetGroupFractions = usePaneSizingStore((state) => state.resetGroupFractions);
   const resetPaneFractions = usePaneSizingStore((state) => state.resetPaneFractions);
 
-  // Live drag state stays local so a drag does not write localStorage on every
-  // pointermove; the final split is committed once on pointerup. The ref
-  // mirrors it so the commit can read the latest fractions without reaching
-  // into a state updater, which React may replay during another component's
-  // render.
+  // Persist fractions only on pointerup; the ref reads the latest drag without a replayable state updater.
   const [drag, setDrag] = useState<DragScope | null>(null);
   const dragRef = useRef<DragScope | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const groupRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const axis = secondaryPanes.axis;
-  const readStored = useCallback(
-    (key: string, fallback: ReadonlyArray<number> | undefined) =>
-      drag?.key === key ? drag.fractions : fallback,
-    [drag],
-  );
-  const layout = useMemo(
-    () =>
-      buildPaneLayout({
-        primaryTarget,
-        layout: secondaryPanes,
-        groupFractions: readStored("groups", storedGroupFractions[axis]) ?? null,
-        paneFractions: [0, 1].map((groupIndex) => {
-          const key = paneGroupSizingKey(axis, groupIndex);
-          return readStored(key, storedPaneFractions[key]) ?? null;
-        }),
+  const readStored = (key: string, fallback: ReadonlyArray<number> | undefined) =>
+    drag?.key === key ? drag.fractions : fallback;
+  const layout = (() =>
+    buildPaneLayout({
+      primaryTarget,
+      layout: secondaryPanes,
+      groupFractions: readStored("groups", storedGroupFractions[axis]) ?? null,
+      paneFractions: [0, 1].map((groupIndex) => {
+        const key = paneGroupSizingKey(axis, groupIndex);
+        return readStored(key, storedPaneFractions[key]) ?? null;
       }),
-    [axis, primaryTarget, readStored, secondaryPanes, storedGroupFractions, storedPaneFractions],
-  );
+    }))();
 
   const syncPaneIds = usePaneFocusStore((state) => state.syncPaneIds);
   const focusPane = usePaneFocusStore((state) => state.focusPane);
@@ -145,6 +120,7 @@ export function ThreadPanes({ primaryTarget }: { primaryTarget: ThreadRouteTarge
   const paneIdsKey = layout.groups
     .flatMap((group) => group.panes.map((pane) => pane.paneId))
     .join(" ");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- updates the focus registry and native browser bounds when mounted panes change
   useEffect(() => {
     syncPaneIds(paneIdsKey.length === 0 ? [] : paneIdsKey.split(" "));
     // Opening or closing a pane reflows the rest of the grid. A native browser
@@ -153,35 +129,32 @@ export function ThreadPanes({ primaryTarget }: { primaryTarget: ThreadRouteTarge
     notifyBrowserSurfaceLayoutChanged();
   }, [paneIdsKey, syncPaneIds]);
 
-  const handleDragDelta = useCallback(
-    (input: {
-      readonly key: string;
-      readonly container: HTMLDivElement | null;
-      readonly along: PaneAxis;
-      readonly stored: ReadonlyArray<number> | undefined;
-      readonly count: number;
-      readonly deltaPx: number;
-    }) => {
-      const extent =
-        input.along === "row" ? input.container?.clientWidth : input.container?.clientHeight;
-      if (extent === undefined || extent <= 0) return;
-      const floor = input.along === "row" ? PANE_FLOOR_WIDTH : PANE_FLOOR_HEIGHT;
-      const current = dragRef.current;
-      const base =
-        current?.key === input.key
-          ? current.fractions
-          : normalizePaneFractions(input.stored, input.count);
-      const next = {
-        key: input.key,
-        fractions: resizePaneFractions(base, 0, input.deltaPx / extent, floor / extent),
-      };
-      dragRef.current = next;
-      setDrag(next);
-      notifyBrowserSurfaceLayoutChanged();
-    },
-    [],
-  );
-  const handleDragEnd = useCallback(() => {
+  const handleDragDelta = (input: {
+    readonly key: string;
+    readonly container: HTMLDivElement | null;
+    readonly along: PaneAxis;
+    readonly stored: ReadonlyArray<number> | undefined;
+    readonly count: number;
+    readonly deltaPx: number;
+  }) => {
+    const extent =
+      input.along === "row" ? input.container?.clientWidth : input.container?.clientHeight;
+    if (extent === undefined || extent <= 0) return;
+    const floor = input.along === "row" ? PANE_FLOOR_WIDTH : PANE_FLOOR_HEIGHT;
+    const current = dragRef.current;
+    const base =
+      current?.key === input.key
+        ? current.fractions
+        : normalizePaneFractions(input.stored, input.count);
+    const next = {
+      key: input.key,
+      fractions: resizePaneFractions(base, 0, input.deltaPx / extent, floor / extent),
+    };
+    dragRef.current = next;
+    setDrag(next);
+    notifyBrowserSurfaceLayoutChanged();
+  };
+  const handleDragEnd = () => {
     const current = dragRef.current;
     dragRef.current = null;
     setDrag(null);
@@ -195,20 +168,17 @@ export function ThreadPanes({ primaryTarget }: { primaryTarget: ThreadRouteTarge
         );
     }
     notifyBrowserSurfaceLayoutChanged();
-  }, [axis, setGroupFractions, setPaneFractions]);
-  const handleReset = useCallback(
-    (groupIndex: number | null) => {
-      dragRef.current = null;
-      setDrag(null);
-      if (groupIndex === null) resetGroupFractions(axis);
-      else resetPaneFractions(axis, groupIndex);
-      notifyBrowserSurfaceLayoutChanged();
-    },
-    [axis, resetGroupFractions, resetPaneFractions],
-  );
+  };
+  const handleReset = (groupIndex: number | null) => {
+    dragRef.current = null;
+    setDrag(null);
+    if (groupIndex === null) resetGroupFractions(axis);
+    else resetPaneFractions(axis, groupIndex);
+    notifyBrowserSurfaceLayoutChanged();
+  };
 
   if (layout.paneCount === 1) {
-    return <ThreadRouteView target={primaryTarget} />;
+    return <ThreadRouteView target={primaryTarget} background={background} />;
   }
 
   // Panes inside a group run across the root axis, so a `row` grid stacks them.
@@ -219,6 +189,7 @@ export function ThreadPanes({ primaryTarget }: { primaryTarget: ThreadRouteTarge
         "relative flex min-h-0 w-full min-w-0 flex-1",
         axis === "row" ? "flex-row" : "flex-col",
       )}
+      inert={background}
       ref={rootRef}
     >
       {/* Groups are keyed by slot, not content, so a pane that stays put is not remounted. */}
@@ -295,7 +266,7 @@ export function ThreadPanes({ primaryTarget }: { primaryTarget: ThreadRouteTarge
                     onPointerDownCapture={() => focusPane(pane.paneId)}
                     style={{ flexBasis: `${pane.sizeFraction * 100}%`, flexGrow: 0, flexShrink: 1 }}
                   >
-                    <ThreadRouteView target={pane.target} />
+                    <ThreadRouteView target={pane.target} background={background} />
                   </div>
                 </PaneProvider>
               </Fragment>

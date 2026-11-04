@@ -87,15 +87,13 @@ describe("pane search encoding", () => {
     { encoded: "vtB", axis: "column", groups: [[], [B]] },
   ];
 
-  for (const { axis, encoded, groups } of cases) {
-    it(`round-trips ${encoded}`, () => {
-      const layout = layoutOf(axis, ...groups);
-      const written = encodeSecondaryPanes(layout);
-      // Tokens are opaque, so compare the shape rather than the literal text.
-      expect(written?.replaceAll(paneTargetToken(B), "tB")).toBeTypeOf("string");
-      expect(decodeSecondaryPanes(written)).toEqual(layout);
-    });
-  }
+  it.each(cases)("round-trips $encoded", ({ axis, groups }) => {
+    const layout = layoutOf(axis, ...groups);
+    const written = encodeSecondaryPanes(layout);
+    // Tokens are opaque, so compare the shape rather than the literal text.
+    expect(written?.replaceAll(paneTargetToken(B), "tB")).toBeTypeOf("string");
+    expect(decodeSecondaryPanes(written)).toEqual(layout);
+  });
 
   it("writes the documented grammar", () => {
     const token = (target: ThreadRouteTarget) => paneTargetToken(target);

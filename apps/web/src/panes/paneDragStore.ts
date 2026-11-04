@@ -1,13 +1,3 @@
-/**
- * Cross-tree handshake for drag-to-split.
- *
- * The sidebar owns the drag (it is a dnd-kit sortable list) and the pane row
- * owns the drop zones, and neither is an ancestor of the other. The store
- * carries exactly one reactive bit — is a thread being dragged — so mounting
- * the drop overlay is the only render the rest of the tree pays for. The armed
- * drop is deliberately *not* reactive: it changes on every pointermove, and is
- * read once, imperatively, when the drag ends.
- */
 import { create } from "zustand";
 
 import type { ThreadRouteTarget } from "../threadRoutes";

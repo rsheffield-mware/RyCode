@@ -1,12 +1,3 @@
-/**
- * Focus arbitration for the pane row.
- *
- * Exactly one pane is focused at a time. Every app-wide singleton listener
- * (the window keydown handlers, the global paste, the timeline scroll
- * anchoring, the preview action bus) consults this so a shortcut lands in the
- * pane the user is working in instead of firing once per mounted ChatView.
- */
-
 export interface PaneFocusInput {
   /** The currently focused pane, or null on first render. */
   readonly current: string | null;
@@ -16,11 +7,6 @@ export interface PaneFocusInput {
   readonly requested?: string | null;
 }
 
-/**
- * Resolves which pane holds focus. An explicit request wins when that pane is
- * still on screen; otherwise focus stays put, and only falls back to the first
- * pane when its previous owner is gone (closed, or promoted away).
- */
 export function resolveFocusedPaneId(input: PaneFocusInput): string | null {
   const { current, paneIds, requested } = input;
   if (paneIds.length === 0) return null;
@@ -29,11 +15,6 @@ export function resolveFocusedPaneId(input: PaneFocusInput): string | null {
   return paneIds[0] ?? null;
 }
 
-/**
- * True when a pane may run app-wide singleton behaviour. A lone pane always
- * qualifies, which keeps the single-pane path byte-for-byte the old one even
- * before any focus event has been recorded.
- */
 export function paneOwnsGlobalHandlers(input: {
   readonly paneId: string;
   readonly paneCount: number;

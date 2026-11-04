@@ -1,11 +1,3 @@
-/**
- * Maps the desktop application menu's pane actions onto the pane row.
- *
- * The menu is built once in the main process and has no idea how many panes
- * are open, so the decision of what an item means happens here. A menu item is
- * always clickable, which makes "this does nothing right now" a real answer:
- * `null` leaves the pane row and the route untouched rather than navigating.
- */
 import { resolveFocusedPaneId } from "./paneFocus";
 import type { PaneEdge } from "./paneLayout";
 

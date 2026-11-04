@@ -1,20 +1,3 @@
-/**
- * Pure pane-layout model for the multi-pane chat view.
- *
- * The layout is a depth-2 grid: a root axis, up to two *groups* running along
- * it, and up to two panes inside each group running across it. That is exactly
- * enough to express every arrangement of four panes up to a 2x2 grid, and not
- * enough to express anything harder to reason about.
- *
- * The first pane is the *primary* one: it is the route's own path params, so
- * every existing `useParams({ strict: false })` consumer keeps seeing exactly
- * what it saw before panes existed. Every other pane is serialized into the
- * `panes` search param on `_chat`, which makes a split layout shareable and
- * reload safe.
- *
- * Sizes are deliberately *not* in the URL: a drag would push a history entry
- * per frame. They persist locally instead (see `paneStore`).
- */
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
@@ -24,14 +7,9 @@ import type { ThreadRouteTarget } from "../threadRoutes";
 /** Stable id of the pane that owns the route path params. */
 export const PRIMARY_PANE_ID = "pane:primary";
 
-/**
- * Upper bound on simultaneously mounted threads. Each pane carries a live
- * websocket subscription and a full ChatView, so this is a real resource cap
- * rather than a styling one.
- */
 export const MAX_PANES = 4;
-export const MAX_PANE_GROUPS = 2;
-export const MAX_PANES_PER_GROUP = 2;
+const MAX_PANE_GROUPS = 2;
+const MAX_PANES_PER_GROUP = 2;
 
 /** Width a newly split pane is given, mirroring `THREAD_MAIN_CONTENT_MIN_WIDTH`. */
 export const PANE_MIN_WIDTH = 30 * 16;
@@ -42,12 +20,6 @@ export const PANE_MIN_HEIGHT = 20 * 16;
 /** Hard floor for a vertical split. */
 export const PANE_FLOOR_HEIGHT = 12 * 16;
 
-/**
- * Direction the root splits in. Groups run along this axis; panes inside a
- * group run across it. `row` renders groups as side-by-side columns whose
- * panes stack vertically; `column` renders groups as stacked rows whose panes
- * sit side by side.
- */
 export type PaneAxis = "row" | "column";
 
 /** Which side of a pane a split lands on. */
@@ -60,11 +32,6 @@ export interface PaneTargetEntry {
   readonly target: ThreadRouteTarget;
 }
 
-/**
- * The `panes` search value, decoded. `groups` is in render order and index 0
- * is the *primary pane's* group with the primary itself left out, since the
- * primary lives in the route's path params instead.
- */
 export interface SecondaryPaneLayout {
   readonly axis: PaneAxis;
   readonly groups: ReadonlyArray<ReadonlyArray<PaneTargetEntry>>;
@@ -95,16 +62,6 @@ function paneEdgeGuards(edge: PaneEdge): { readonly min: number; readonly floor:
     : { min: PANE_MIN_HEIGHT, floor: PANE_FLOOR_HEIGHT };
 }
 
-/**
- * Escapes the delimiters inside an id.
- *
- * Percent-encoding cannot do this job: the router percent-decodes the whole
- * search value before `decodeSecondaryPanes` ever sees it, so a `%3A` written
- * here arrives as a bare `:`. Thread ids really do contain colons (provider
- * imports look like `import:claudeAgent:<uuid>`), so the escaping has to live
- * in the plaintext layer, below the URL encoding, where it survives the
- * round trip intact.
- */
 function encodeField(value: string): string {
   return value
     .replaceAll(ESCAPE, `${ESCAPE}${ESCAPE}`)
@@ -146,12 +103,6 @@ export function paneTargetToken(target: ThreadRouteTarget): string {
     : `d${FIELD_SEPARATOR}${encodeField(target.draftId)}`;
 }
 
-/**
- * A token this module wrote always has exactly the expected field count, since
- * `encodeField` escapes the separator. Extra fields only appear in a
- * hand-written URL that left its colons unescaped, so the trailing fields are
- * rejoined rather than rejected: the id carrying colons is always the last one.
- */
 function parsePaneToken(token: string): PaneTargetEntry | null {
   const parts = token.split(FIELD_SEPARATOR);
   if (parts[0] === "t" && parts.length >= 3) {
@@ -173,11 +124,6 @@ function parsePaneToken(token: string): PaneTargetEntry | null {
   return null;
 }
 
-/**
- * Enforces the layout invariants: at most `MAX_PANE_GROUPS` groups, no empty
- * group other than the primary's, and a meaningless axis reset to `row` once
- * only the primary is left.
- */
 function makeLayout(
   axis: PaneAxis,
   groups: ReadonlyArray<ReadonlyArray<PaneTargetEntry>>,
@@ -190,21 +136,10 @@ function makeLayout(
   return { axis: lonePane ? "row" : axis, groups: normalized };
 }
 
-/**
- * True for a value written before the grid existed: a flat comma-separated
- * list meaning one pane per column. The current grammar always shows its hand
- * — a `|` somewhere, or a leading `v` — so this is a check, not a guess.
- */
 function isLegacyPaneValue(value: string): boolean {
   return !value.includes(PANE_SEPARATOR) && !value.startsWith(COLUMN_AXIS_PREFIX);
 }
 
-/**
- * Folds a flat legacy list into the two-group grid. Rearranging a layout is a
- * far smaller betrayal than closing a thread the user had open, so every pane
- * up to `MAX_PANES` survives: the ordered list splits in half, counting the
- * primary as its first entry even though the string never names it.
- */
 function decodeLegacyPanes(value: string): SecondaryPaneLayout {
   const secondaries: PaneTargetEntry[] = [];
   const seen = new Set<string>();
@@ -221,17 +156,6 @@ function decodeLegacyPanes(value: string): SecondaryPaneLayout {
   return makeLayout("row", [secondaries.slice(0, split - 1), secondaries.slice(split - 1)]);
 }
 
-/**
- * Reads the `panes` search value. Malformed entries are dropped and the caps
- * clamp rather than throw: a hand-edited or truncated URL should degrade to
- * fewer panes, never to a blank app.
- *
- * The grammar is `[v][|]group(,group)*` where a group is `token(|token)*`. A
- * leading `v` selects the `column` axis and a leading `|` says the first group
- * is the primary pane's. A value in neither shape predates the grid and is
- * folded into it; a value in this grammar that still breaks a cap was
- * hand-edited, so the surplus is dropped instead.
- */
 export function decodeSecondaryPanes(raw: unknown): SecondaryPaneLayout {
   if (typeof raw !== "string" || raw.length === 0) return EMPTY_PANE_LAYOUT;
   if (isLegacyPaneValue(raw)) return decodeLegacyPanes(raw);
@@ -310,11 +234,6 @@ function withoutPane(
   return changed ? makeLayout(layout.axis, groups) : layout;
 }
 
-/**
- * Drops any secondary pane that duplicates the primary target. The primary
- * pane follows the route, so navigating it onto a thread that is already open
- * beside it would otherwise show the same thread twice.
- */
 export function reconcileSecondaryPanes(
   layout: SecondaryPaneLayout,
   primaryTarget: ThreadRouteTarget | null,
@@ -386,18 +305,6 @@ export type PaneSplitOutcome =
   /** Shrinking the existing pane would push it below the floor. */
   | { readonly kind: "no-room" };
 
-/**
- * Decides what splitting `anchorPaneId` along `edge` does, without touching
- * any targets. Shared by the drop overlay (which only needs to know whether
- * the split is legal) and `planPaneDrop` (which then applies it).
- *
- * `anchorExtent` is the anchor pane's size along `edge` in px. Since a split
- * only ever happens into a container holding one child, that extent *is* the
- * container's, which is why no other measurement is needed. Zero means the
- * caller could not measure, and an even split is assumed rather than refused.
- *
- * Returns null when the anchor is not on screen.
- */
 export function resolvePaneSplit(input: {
   readonly grid: ReadonlyArray<ReadonlyArray<string>>;
   readonly axis: PaneAxis;
@@ -505,13 +412,6 @@ export function isPaneSplitRefusal(kind: PaneDropPlan["kind"]): kind is "full" |
   return kind === "full" || kind === "no-room";
 }
 
-/**
- * Names the reason a split was refused on *both* edges, or null while either
- * one still landed. A cap and a window too small to divide need different
- * wording, and only a cap refuses every edge: once four panes are open the
- * pane count is checked before any size guard, so a mixed pair of refusals
- * means there was room in the grid but not on the screen.
- */
 export function resolvePaneSplitRefusal(
   attempted: PaneDropPlan["kind"],
   fallback: PaneDropPlan["kind"],
@@ -520,12 +420,6 @@ export function resolvePaneSplitRefusal(
   return attempted === "full" && fallback === "full" ? "full" : "no-room";
 }
 
-/**
- * Places a target beside `anchorPaneId`, on the given edge. A thread already
- * on screen is *moved* to the new slot rather than opened twice, which keeps
- * the one-pane-per-thread rule without making a drop onto an already-open
- * thread do nothing.
- */
 export function planPaneDrop(input: {
   readonly primaryTarget: ThreadRouteTarget | null;
   readonly layout: SecondaryPaneLayout;
@@ -586,12 +480,6 @@ export function planPaneDrop(input: {
     : { kind: "promote", primary: head.target, layout: nextLayout, sizing };
 }
 
-/**
- * Coerces persisted fractions onto `count` siblings. A stored list of the
- * wrong length, containing a non-finite or non-positive entry, is discarded in
- * favour of an even split rather than partially repaired: a half-repaired
- * layout is harder to reason about than a reset one.
- */
 export function normalizePaneFractions(
   stored: ReadonlyArray<number> | null | undefined,
   count: number,
@@ -608,12 +496,6 @@ export function normalizePaneFractions(
   return stored.map((value) => value / total);
 }
 
-/**
- * Moves the boundary between sibling `index` and `index + 1` by
- * `deltaFraction`, leaving every other sibling untouched. Both neighbours are
- * held at `floorFraction` — the hard floor, not the size a fresh split is
- * given, so a pane that was split narrow can still be dragged.
- */
 export function resizePaneFractions(
   fractions: ReadonlyArray<number>,
   index: number,

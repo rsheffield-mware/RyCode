@@ -1,9 +1,10 @@
 import { PlayIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 
 import {
   clearCustomNotificationSound,
-  getCustomNotificationSound,
+  readCustomNotificationSoundName,
+  subscribeCustomNotificationSound,
   hasNotificationSound,
   NOTIFICATION_MODE_LABELS,
   prepareNotificationMode,
@@ -95,19 +96,12 @@ export function NotificationSoundSettings() {
   const mode = useScopedSettings((settings) => settings.notificationMode);
   const inputRef = useRef<HTMLInputElement>(null);
   // undefined until the stored sound loads, null when using the built-in sounds.
-  const [soundName, setSoundName] = useState<string | null | undefined>(undefined);
+  const soundName = useSyncExternalStore(
+    subscribeCustomNotificationSound,
+    readCustomNotificationSoundName,
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    void getCustomNotificationSound().then((sound) => {
-      if (active) setSoundName(sound ? sound.name : null);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   if (!hasNotificationSound(mode)) return null;
 
@@ -128,7 +122,7 @@ export function NotificationSoundSettings() {
             onClick={() => {
               setMessage(null);
               void clearCustomNotificationSound().then(
-                () => setSoundName(null),
+                () => undefined,
                 () => setMessage("Couldn't remove the custom sound. Try again."),
               );
             }}
@@ -149,8 +143,7 @@ export function NotificationSoundSettings() {
               setMessage(null);
               setSaving(true);
               setCustomNotificationSound(file)
-                .then((sound) => {
-                  setSoundName(sound.name);
+                .then(() => {
                   return previewNotificationSound();
                 })
                 .catch((error: unknown) => {

@@ -1,13 +1,5 @@
-/**
- * Drop zones shown while a thread is dragged out of the sidebar.
- *
- * Mounted only for the duration of a drag, and rendered into a portal so the
- * pane subtrees are untouched: a split layout and a lone pane render exactly
- * what they render at rest. Pointer tracking updates this component's own
- * state and nothing else, so a drag never rerenders a ChatView.
- */
 import { useParams } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { resolveThreadRouteTarget } from "../threadRoutes";
@@ -34,16 +26,17 @@ function PaneDropZones() {
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
   });
-  const grid = useMemo(() => paneIdGrid(layout), [layout]);
+  const grid = (() => paneIdGrid(layout))();
   // The dragged thread may already be on screen, in which case the drop moves
   // it and the caps have one fewer pane to account for.
-  const movingPaneId = useMemo(() => {
+  const movingPaneId = (() => {
     if (draggedTarget === null) return null;
     const token = paneTargetToken(draggedTarget);
     if (primaryTarget !== null && paneTargetToken(primaryTarget) === token) return PRIMARY_PANE_ID;
     return grid.some((group) => group.includes(token)) ? token : null;
-  }, [draggedTarget, grid, primaryTarget]);
+  })();
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- attaches document pointer listeners for the pane drop overlay
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const target = resolvePaneDropTarget({

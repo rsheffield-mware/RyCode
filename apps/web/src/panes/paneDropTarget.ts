@@ -1,10 +1,3 @@
-/**
- * Drop-target geometry for drag-to-split.
- *
- * Given the pointer and the on-screen pane boxes, this decides which pane the
- * pointer is over and which of its four edges it is nearest. Everything except
- * `measurePaneRects` is pure: no React, no knowledge of what a pane contains.
- */
 import type { PaneEdge } from "./paneLayout";
 
 export interface PaneRect {
@@ -24,14 +17,6 @@ function isUsableRect(rect: PaneRect): boolean {
   return rect.right > rect.left && rect.bottom > rect.top;
 }
 
-/**
- * The pane under the pointer and the edge it is nearest, or null when the
- * pointer is outside every pane. The pane is cut into four triangles along its
- * diagonals, with the offsets normalized by half-width and half-height, so a
- * corner resolves to the edge whose side of the box the pointer is deepest
- * into rather than to whichever axis happens to be longer. A boundary shared
- * by two panes belongs to whichever comes first in `rects`.
- */
 export function resolvePaneDropTarget(input: {
   readonly pointerX: number;
   readonly pointerY: number;
