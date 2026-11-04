@@ -13,7 +13,7 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-const APP_DISPLAY_NAME = isDevelopment ? "RyCode (Dev)" : "RyCode (Beta)";
+const APP_DISPLAY_NAME = isDevelopment ? "RyCode (Dev)" : "RyCode";
 const APP_BUNDLE_ID = isDevelopment
   ? `com.rycode.desktop.dev.${devBundleIdSuffix || "local"}`
   : "com.rycode.desktop";

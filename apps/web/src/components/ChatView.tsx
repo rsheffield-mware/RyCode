@@ -1,8 +1,6 @@
 import { readPaneOwnsGlobalHandlers } from "../panes/paneStore";
 import { usePane } from "../panes/PaneContext";
 import { PaneCloseButton } from "../panes/PaneCloseButton";
-import { NotificationBell } from "./chat/NotificationBell";
-import { SourcetreeButton } from "./chat/SourcetreeButton";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -3385,15 +3383,6 @@ export default function ChatView(props: ChatViewProps) {
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
             />
-            <div className="ml-auto flex items-center gap-1 [-webkit-app-region:no-drag]">
-              {gitCwd &&
-              gitStatusQuery.data?.isRepo === true &&
-              remoteOpenState.mode === "local-exec" &&
-              availableEditors.includes("sourcetree") ? (
-                <SourcetreeButton environmentId={environmentId} cwd={gitCwd} />
-              ) : null}
-              <NotificationBell />
-            </div>
           </header>
         )}
 
